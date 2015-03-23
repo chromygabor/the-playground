@@ -1,0 +1,52 @@
+def langLevel = 1.8
+ 
+allprojects {
+ 
+    apply plugin: 'idea'
+ 
+    group = 'com.chromy'
+    version = '0.1'
+}
+ 
+subprojects {
+ 
+    apply plugin: 'scala'
+
+    sourceCompatibility = langLevel
+    targetCompatibility = langLevel
+ 
+    repositories {
+        mavenLocal()
+        mavenCentral()
+    }
+ 
+    dependencies {
+        compile 'org.scala-lang:scala-library:2.11.6'
+    }
+}
+ 
+project(':metro') {
+ 
+    dependencies {
+        'com.typesafe.akka:akka-actor_2.11:2.3.9'
+    }
+}
+
+project(':sandbox') {
+ 
+    dependencies {
+    }
+}
+ 
+project(':binarytree') {
+ 
+    dependencies {
+    }
+}
+ 
+idea {
+    project {
+        jdkName = langLevel
+        languageLevel = langLevel
+    }
+}
