@@ -28,7 +28,7 @@ subprojects {
 project(':metro') {
  
     dependencies {
-        'com.typesafe.akka:akka-actor_2.11:2.3.9'
+        compile 'com.typesafe.akka:akka-actor_2.11:2.3.9'
     }
 }
 
@@ -43,7 +43,14 @@ project(':binarytree') {
     dependencies {
     }
 }
- 
+
+project(':reactiveui') {
+
+    dependencies {
+        compile 'io.reactivex:rxscala_2.11:0.24.0'
+    }
+}
+
 idea {
     project {
         jdkName = langLevel

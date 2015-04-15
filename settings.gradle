@@ -1,1 +1,1 @@
-include 'metro', 'binarytree', 'sandbox'
+include 'metro', 'binarytree', 'sandbox', 'reactiveui'
