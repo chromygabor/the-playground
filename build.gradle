@@ -4,7 +4,7 @@ allprojects {
  
     apply plugin: 'idea'
  
-    group = 'com.chromy'
+    group = 'com.msci.playground'
     version = '0.1'
 }
  

@@ -138,69 +138,69 @@ case object TestEvent extends Event
 
 case class TestEvent2() extends Event
 
-class RxAppController(view: RxAppView, behavior: RxAppBehavior) {
-
-  import scala.collection.JavaConversions._
-  import scala.io.Source
-
-  val c1 = MyTableColumn[Word](TextColumn("First"), UpdateCell { case (cell, Word(word)) => Text(word) }, ClearCell { case (cell) => })
-  val c2 = MyTableColumn[Word](TextColumn("Second"), UpdateCell { case (cell, Word(word)) => Text(word + " aaa ") }, ClearCell { case (cell) => })
-
-  val rxTable = new RxTableView(view.table1)
-  rxTable.columns.onNext(Seq(c1, c2))
-
-  //val button = RxNode(view.button)
-
-  def words = {
-    println("Loading on: " + Thread.currentThread().getName)
-    val o = Option {
-      getClass.getResourceAsStream("words.txt")
-    }.map { s => Source.fromInputStream(s).getLines().map { in => Word(in) }.toList }
-
-    o match {
-      case Some(res) => res
-      case _ => Nil
-    }
-  }
-
-  val button = new RxNode {
-    view.button.setOnAction(new EventHandler[ActionEvent] {
-      override def handle(event: ActionEvent): Unit = {
-        println("click sent: " + Thread.currentThread().getName)
-        publish(ClickEvent)
-      }
-    })
-
-    reactors += {
-      case e => println("reactor: " + e)
-    }
-
-    from[TestEvent2].subscribe { event =>
-      println("from[TestEvent2] stream: " + event)
-    }
-  }
-
-  button.subscribe { event =>
-    println("button send: " + event)
-    button.tell(TestEvent2())
-  }
-
-
-  val es = button.observeOn(NewThreadScheduler()).filter {
-    case ClickEvent => true
-    case _ => false
-  } map {
-    _.asInstanceOf[ClickEvent.type]
-  }
-
-  val wordsStream = es.map { _ =>
-    println("Load starting on: " + Thread.currentThread().getName)
-    val w = words
-    println("Load stopping on: " + Thread.currentThread().getName)
-    w
-  }
-
-  wordsStream.subscribe { words =>
-    rxTable.allItems.onNext(words)
-  }
-}
+//class RxAppController(view: RxAppView, behavior: RxAppBehavior) {
+//
+//  import scala.collection.JavaConversions._
+//  import scala.io.Source
+//
+//  val c1 = MyTableColumn[Word](TextColumn("First"), UpdateCell { case (cell, Word(word)) => Text(word) }, ClearCell { case (cell) => })
+//  val c2 = MyTableColumn[Word](TextColumn("Second"), UpdateCell { case (cell, Word(word)) => Text(word + " aaa ") }, ClearCell { case (cell) => })
+//
+//  val rxTable = new RxTableView(view.table1)
+//  rxTable.columns.onNext(Seq(c1, c2))
+//
+//  //val button = RxNode(view.button)
+//
+//  def words = {
+//    println("Loading on: " + Thread.currentThread().getName)
+//    val o = Option {
+//      getClass.getResourceAsStream("words.txt")
+//    }.map { s => Source.fromInputStream(s).getLines().map { in => Word(in) }.toList }
+//
+//    o match {
+//      case Some(res) => res
+//      case _ => Nil
+//    }
+//  }
+//
+//  val button = new RxNode {
+//    view.button.setOnAction(new EventHandler[ActionEvent] {
+//      override def handle(event: ActionEvent): Unit = {
+//        println("click sent: " + Thread.currentThread().getName)
+//        publish(ClickEvent)
+//      }
+//    })
+//
+//    reactors += {
+//      case e => println("reactor: " + e)
+//    }
+//
+//    from[TestEvent2].subscribe { event =>
+//      println("from[TestEvent2] stream: " + event)
+//    }
+//  }
+//
+//  button.subscribe { event =>
+//    println("button send: " + event)
+//    button.tell(TestEvent2())
+//  }
+//
+//
+//  val es = button.observeOn(NewThreadScheduler()).filter {
+//    case ClickEvent => true
+//    case _ => false
+//  } map {
+//    _.asInstanceOf[ClickEvent.type]
+//  }
+//
+//  val wordsStream = es.map { _ =>
+//    println("Load starting on: " + Thread.currentThread().getName)
+//    val w = words
+//    println("Load stopping on: " + Thread.currentThread().getName)
+//    w
+//  }
+//
+//  wordsStream.subscribe { words =>
+//    rxTable.allItems.onNext(words)
+//  }
+//}
