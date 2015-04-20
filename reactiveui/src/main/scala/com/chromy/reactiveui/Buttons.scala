@@ -1,4 +1,4 @@
-package com.msci.reactiveui
+package com.chromy.reactiveui
 
 import javafx.fxml.{FXML, FXMLLoader}
 import javafx.scene.control.Button

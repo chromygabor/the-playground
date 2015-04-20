@@ -1,4 +1,4 @@
-package com.msci.reactiveui
+package com.chromy.reactiveui
 
 import java.awt.Toolkit
 import java.util.UUID
