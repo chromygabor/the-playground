@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import java.lang.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<HBox xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.chromy.reactiveui.myjavafx.CounterPair">
+    <children>
+        <VBox prefHeight="200.0" prefWidth="100.0">
+            <children>
+                <Label fx:id="_leftLabel" text="" />
+                <Button fx:id="_leftClear" mnemonicParsing="false" text="Clear" />
+                <fx:include fx:id="_leftCounter" source="Counter.fxml" />
+            </children>
+        </VBox>
+        <VBox prefHeight="200.0" prefWidth="100.0">
+            <children>
+                <Label fx:id="_rightLabel" text="" />
+                <Button fx:id="_rightClear" mnemonicParsing="false" text="Clear" />
+                <fx:include fx:id="_rightCounter" source="Counter.fxml" />
+            </children>
+        </VBox>
+    </children>
+</HBox>

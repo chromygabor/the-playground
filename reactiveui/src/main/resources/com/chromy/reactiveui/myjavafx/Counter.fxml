@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import java.lang.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<FlowPane hgap="10.0" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.chromy.reactiveui.myjavafx.Counter">
+    <children>
+        <Button fx:id="_decrementButton" mnemonicParsing="false" text="Decrement" />
+        <Label fx:id="_counterLabel" text="" />
+        <Button fx:id="_incrementButton" mnemonicParsing="false" text="Increment" />
+    </children>
+</FlowPane>
