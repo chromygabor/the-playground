@@ -12,11 +12,12 @@ import com.chromy.reactiveui.{Signal}
  * Created by chrogab on 2015.04.28..
  */
 
-case object Increment extends Counter.Actions({model =>
+case object Increment extends Counter.Action.Sync({model =>
   model.copy(counter = model.counter + 1)
+  throw new IllegalStateException("Teszt exception")
 })
-case object Decrement extends Counter.Actions({model => model.copy(counter = model.counter - 1)})
-case object Clear extends Counter.Actions({model => CounterModel()})
+case object Decrement extends Counter.Action.Sync({model => model.copy(counter = model.counter - 1)})
+case object Clear extends Counter.Action.Sync({model => CounterModel()})
 
 case class CounterModel(counter: Int = 0)
 

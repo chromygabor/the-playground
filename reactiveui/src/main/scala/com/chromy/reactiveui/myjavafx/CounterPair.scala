@@ -7,16 +7,39 @@ import javafx.scene.layout.HBox
 import com.chromy.reactiveui.Signal
 import com.chromy.reactiveui.Utils._
 
+import scala.concurrent.{Promise, Future}
+import scala.concurrent.ExecutionContext.Implicits._
+import scala.util.{Failure, Success}
+
 /**
  * Created by chrogab on 2015.04.28..
  */
 
 case class Left(action: ModuleAction[Counter.Model]) extends CounterPair.Actions({ model =>
-  model.copy(leftValue = Counter.update(action, model.leftValue))
+//  val f = for {
+//      leftValue <- Counter.update(action, model.leftValue)
+//  } yield {
+//      println(s"Left on thread ${Thread.currentThread.getName}")
+//      model.copy(leftValue = leftValue)
+//    }
+//  f
+
+  val p = Promise[CounterPair.Model]
+
+  val f = Counter.update(action, model.leftValue).map {leftValue =>  model.copy(leftValue = leftValue)}
+  f.onComplete {
+    case Success(value) => p.success(value)
+    case Failure(error) =>
+  }
+
+  p.future
 })
 
-case class Right(action: ModuleAction[Counter.Model]) extends CounterPair.Actions ({  model =>
-  model.copy(rightValue = Counter.update(action, model.rightValue))
+case class Right(action: ModuleAction[Counter.Model]) extends CounterPair.Action.Async({model =>
+  Counter.update(action, model.rightValue).map { in =>
+    println(s"Right on thread ${Thread.currentThread.getName}")
+    model.copy(rightValue = in)
+  }
 })
 
 
@@ -43,15 +66,18 @@ class CounterPair extends HBox {
   @FXML private var _leftLabel: Label = _
   @FXML private var _rightLabel: Label = _
 
-  @FXML private var _leftCounterController: Counter  = _
-  @FXML private var _rightCounterController: Counter  = _
+  @FXML private var _leftCounterController: Counter = _
+  @FXML private var _rightCounterController: Counter = _
 
   def leftClear = _leftClear
+
   def rightClear = _rightClear
 
   def leftLabel = _leftLabel
+
   def rightLabel = _rightLabel
 
   def leftCounterController = _leftCounterController
+
   def rightCounterController = _rightCounterController
 }
