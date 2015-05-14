@@ -4,6 +4,44 @@ package com.msci.playground
  * Created by cry on 2015.01.28..
  */
 
+
+
+trait State[S, A] {
+  def run: S => (A, S)
+  def map[B](f: A => B): State[S, B] =
+    State(s => {
+      val (a, t) = run(s)
+      (f(a), t)
+    })
+
+  def flatMap[B](f: A => State[S, B]): State[S, B] =
+    State(s => {
+      val (a, t) = run(s)
+      f(a) run t
+    })
+}
+
+object State {
+  def apply[S,A](pRun: S => (A, S)): State[S, A] = new State[S,A] {
+    override def run = pRun
+  }
+}
+
+object StateMonadPlayground extends App {
+  def add[A](x: A) = State[List[A], Unit] { state => ((), x :: state) }
+
+  val result = for {
+    _ <- add(3)
+    _ <- add(5)
+    _ <- add(7)
+    _ <- add(9)
+  } yield (println)
+
+  result.run(List(1))
+
+}
+
+
 //case class Timestamped(fs: FollowerStats, ts: Long)
 //
 //case class FollowerStats()
