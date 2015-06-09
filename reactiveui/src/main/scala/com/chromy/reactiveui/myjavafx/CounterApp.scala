@@ -3,56 +3,54 @@ package com.chromy.reactiveui.myjavafx
 import javafx.application.Platform
 import javafx.embed.swing.JFXPanel
 import javafx.fxml.FXMLLoader
-import javafx.scene.{Parent, Scene}
+import javafx.scene.{Scene, Parent}
 import javafx.stage.Stage
 
-import com.chromy.reactiveui.Atom
+import com.chromy.reactiveui.Dispatcher
+import monocle.macros.GenLens
+import rx.lang.scala.{Subject, Observable, Observer}
 
 /**
- * Created by cry on 2015.05.24..
+ * Created by chrogab on 2015.06.04..
  */
-
-trait Module[C] {
-  def apply(): (Parent, C) = {
-    val clazzName = if (getClass.getSimpleName.endsWith("$")) getClass.getSimpleName.dropRight(1) else getClass.getSimpleName
-    val loader = new FXMLLoader(getClass().getResource(s"$clazzName.fxml"))
-    (loader.load(), loader.getController[C])
-  }
-}
-
+trait Action
+trait LocalAction extends Action
 object CounterApp extends App {
   val fxPanel = new JFXPanel()
 
-    Platform.runLater(new Runnable() {
-      override def run(): Unit = {
+  case class AppModel(model: CounterPairModel = CounterPairModel())
+  case object Nop extends Action
 
-        val loader = new FXMLLoader(getClass().getResource(s"CounterPair.fxml"))
-        //loader.setRoot(loader)
-        val view: Parent = loader.load()
+  Platform.runLater(new Runnable() {
+    override def run(): Unit = {
+      val loader = new FXMLLoader(getClass().getResource(s"CounterPair.fxml"))
+      val view: Parent = loader.load()
 
-        val controller = loader.getController[CounterPair]
-        val root = Atom(CounterPairModel()) {
-          case (oldModel, newModel) =>
-            println(s"$oldModel => $newModel")
-        }
-        controller.dispatch(root)
+      val root = Dispatcher[AppModel, Action]
 
-        root.fire(CounterPairModel())
+      val actions = Subject[Action]
+      val changes = Subject[CounterPairModel]
 
-//        val (view, controller) = CounterPair()
-        val stage = new Stage
-
-        stage.setScene(new Scene(view))
-        stage.setTitle("CounterPair App")
-        stage.show()
-
-
-        Platform.runLater(new Runnable() {
-          override def run(): Unit = {
-            val controller = loader.getController[CounterPair]
-            controller.getChildren
-          }
-        })
+      val initModel = AppModel()
+      val stream = actions.scan(initModel) { (oldState, action) =>
+        val newState = root.update(action).run(oldState)._1
+        changes.onNext(newState.model)
+        newState
       }
-    })
+
+      changes.subscribe({in => println("changes: " + in)})
+      stream.subscribe({ in => })
+
+      val controller = loader.getController[CounterPair]
+      controller.dispatch(root.fromLens(GenLens[AppModel](_.model)), actions, changes.distinctUntilChanged)
+
+      actions.onNext(Nop)
+      val stage = new Stage
+      stage.setScene(new Scene(view))
+      stage.setTitle("CounterPair App")
+      stage.show()
+
+    }
+  })
+
 }

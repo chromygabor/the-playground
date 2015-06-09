@@ -1,61 +1,56 @@
 package com.chromy.reactiveui.myjavafx
 
+import java.util.UUID
 import javafx.fxml.FXML
 import javafx.scene.control.{Button, Label}
 import javafx.scene.layout.FlowPane
 
-import com.chromy.reactiveui.Atom
+import com.chromy.reactiveui.Dispatcher.DispatcherFactory
+import com.chromy.reactiveui.{Dispatcher, Atom}
 import com.chromy.reactiveui.Utils._
+import com.chromy.reactiveui.myjavafx.Counter.{Decrement, Increment}
+import rx.lang.scala.{Observable, Subject, Observer}
 
-//package com.chromy.reactiveui.myjavafx
-//
-//import javafx.beans.property.StringProperty
-//import javafx.fxml.FXML
-//import javafx.scene.control.{Button, Label}
-//import javafx.scene.layout.FlowPane
-//
-//import com.chromy.reactiveui.myjavafx.CounterPair._
-//import com.chromy.reactiveui.{Signal}
-//
-///**
-// * Created by chrogab on 2015.04.28..
-// */
-//
-//case object Increment extends Action
-//case object Decrement extends Action
-//case object Clear extends Action
-//
-//case class CounterModel(counter: Int = 0)
-//
-//object Counter extends Module[CounterModel, Counter] {
-//  override def update: (Action, CounterModel) => CounterModel = { (action, model) => action match {
-//    case Increment => model.copy(counter =  model.counter + 1)
-//    case Decrement => model.copy(counter =  model.counter - 1)
-//    case Clear => model.copy(counter =  0)
-//    case _ => model
-//  }}
-//
-//  def render(model: Model, controller: Controller): Unit = {
-//    controller.counterLabel.setText(model.counter.toString)
-////    controller.incrementButton.setOnAction { () => model.address.onNext(Increment) }
-////    controller.decrementButton.setOnAction { () => model.address.onNext(Decrement) }
-//  }
-//}
-//
+import scala.concurrent.Future
+import scala.util.{Success, Try}
+import scala.concurrent.ExecutionContext.Implicits.global
 
-case class CounterModel(value: Int = 0)
+case class CounterModel(value: Int = 0){
+  val id: String = UUID.randomUUID().toString
+}
+
+case class CounterD(parent: Dispatcher[CounterModel, Action], actions: Observer[Action]) {
+
+}
 
 object Counter {
   type Model = CounterModel
+
+  case class Increment(id: String) extends LocalAction
+  case class Decrement(id: String) extends LocalAction
+  case class StateChanged(id: String) extends Action
+
+  //LocalAction?
+
+  def upd(action: Action, model: CounterModel): CounterModel = action match {
+    case Increment(model.id) =>
+      //println(s"update: $id")
+      model.copy(value = model.value + 1)
+    case Decrement(model.id) =>
+      //println(s"update: $id")
+      val newValue = model.value - 1
+      if (newValue == 0) {
+        Future {
+          println("We are waiting")
+          Thread.sleep(5000)
+          println("We are ready")
+        }
+      }
+      model.copy(value = newValue)
+    case _ => model
+  }
 }
 
-trait Change
-
-case class GrandChildModel(value: Int = 0) extends Change
-
-case class ChildModel(value: Int = 0, leftGrandChild: GrandChildModel = GrandChildModel(), rightGrandChild: GrandChildModel = GrandChildModel()) extends Change
-
-case class ParentModel(child1: ChildModel = ChildModel(), child2: ChildModel = ChildModel()) extends Change
 
 class Counter extends FlowPane {
   @FXML private var _counterLabel: Label = _
@@ -68,30 +63,29 @@ class Counter extends FlowPane {
 
   def decrementButton = _decrementButton
 
-  val model = ParentModel()
 
-  val root = Atom(model) {
-    case (oldModel, newModel) =>
-      println(s"$oldModel => $newModel")
-  }
-
-  def createLotOfAtom(parent: Atom[ParentModel]): Unit = {
-    for (i <- 0 to 1000) {
-      val child1Atom = parent.map(_.child1)(newChild => _.copy(child1 = newChild))
-      child1Atom.changes.subscribe({ model =>
-        println(s"Child1 - $i change: $model")
-      })
-    }
-  }
-
-
-  def dispatch(parent: Atom[CounterModel]): Unit = {
+  def render(model: CounterModel, actions: Observer[Action]): Unit = {
+    counterLabel.setText(model.value.toString)
     incrementButton.setOnAction { () =>
-      createLotOfAtom(root)
+      actions.onNext(Increment(model.id))
+    }
+    decrementButton.setOnAction { () =>
+      actions.onNext(Decrement(model.id))
     }
   }
 
-  def render(model: CounterModel, input: Atom[CounterModel]) = {
-
+  def error(err: Throwable): Unit = {
   }
+
+  def complete(): Unit = {
+  }
+
+  def dispatch(parentFactory: DispatcherFactory[CounterModel, Action], actions: Observer[Action], changes: Observable[CounterModel]) = {
+    val parent = parentFactory({ action => State[CounterModel, Action] { model => Counter.upd(action, model) -> action}})
+
+    val dispatcher = CounterD(parent, actions)
+
+    changes.distinctUntilChanged.subscribe({ model => render(model, actions)}, { err => error(err)}, { () => complete()})
+  }
+
 }
