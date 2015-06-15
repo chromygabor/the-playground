@@ -18,18 +18,18 @@ trait LocalAction extends Action
 object CounterApp extends App {
   val fxPanel = new JFXPanel()
 
-  case class AppModel(model: CounterPairModel = CounterPairModel())
+  case class AppModel(model: CountersModel = CountersModel())
   case object Nop extends Action
 
   Platform.runLater(new Runnable() {
     override def run(): Unit = {
-      val loader = new FXMLLoader(getClass().getResource(s"CounterPair.fxml"))
+      val loader = new FXMLLoader(getClass().getResource(s"Counters.fxml"))
       val view: Parent = loader.load()
 
       val root = Dispatcher[AppModel, Action]
 
       val actions = Subject[Action]
-      val changes = Subject[CounterPairModel]
+      val changes = Subject[CountersModel]
 
       val initModel = AppModel()
       val stream = actions.scan(initModel) { (oldState, action) =>
@@ -41,7 +41,7 @@ object CounterApp extends App {
       changes.subscribe({in => println("changes: " + in)})
       stream.subscribe({ in => })
 
-      val controller = loader.getController[CounterPair]
+      val controller = loader.getController[Counters]
       controller.dispatch(root.fromLens(GenLens[AppModel](_.model)), actions, changes.distinctUntilChanged)
 
       actions.onNext(Nop)
