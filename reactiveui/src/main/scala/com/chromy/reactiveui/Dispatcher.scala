@@ -18,7 +18,11 @@ trait Dispatcher[S, A] {
     lens(theLens.get, theLens.set)
   }
 
-  private def lens[B](iGet: S => B, iSet: (B) => S => S): DispatcherFactory[B, A] = new DispatcherFactory[B, A]{
+  def factory = {
+    lens({input: S => input}, {input1: S => _ => input1})
+  }
+
+  def lens[B](iGet: S => B, iSet: (B) => S => S): DispatcherFactory[B, A] = new DispatcherFactory[B, A]{
 
     def subscribe(subscriber: (B, A) => B): Dispatcher[B, A] = {
       val dispatcher = new Dispatcher[B, A] {
