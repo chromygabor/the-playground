@@ -1,5 +1,6 @@
 package com.chromy.reactiveui.myjavafx
 
+import java.util.concurrent.Executor
 import javafx.application.Platform
 import javafx.embed.swing.JFXPanel
 import javafx.fxml.FXMLLoader
@@ -8,13 +9,40 @@ import javafx.stage.Stage
 
 import com.chromy.reactiveui.Dispatcher
 import monocle.macros.GenLens
+import rx.lang.scala.schedulers.ComputationScheduler
 import rx.lang.scala.{Subject, Observable, Observer}
+import rx.lang.scala.{Scheduler => ScalaScheduler}
+import rx.schedulers.Schedulers
+
+import scala.util.{Failure, Success, Try}
 
 /**
  * Created by chrogab on 2015.06.04..
  */
 trait Action
 trait LocalAction extends Action
+
+trait Module[M, C] {
+  type Model = M
+  type Controller = C
+
+  def apply(): (Parent, C) = {
+    val clazzName = if(getClass.getSimpleName.endsWith("$")) getClass.getSimpleName.dropRight(1) else getClass.getSimpleName
+    val loader = new FXMLLoader(getClass().getResource(s"$clazzName.fxml"))
+    (loader.load(), loader.getController[C])
+  }
+}
+
+object JavaFXScheduler {
+  def apply() = {
+    new ScalaScheduler {
+      val asJavaScheduler = Schedulers.from(new Executor {
+        override def execute(command: Runnable): Unit = Platform.runLater(command)
+      })
+    }
+  }
+}
+
 object CounterApp extends App {
   val fxPanel = new JFXPanel()
 
@@ -23,33 +51,39 @@ object CounterApp extends App {
 
   Platform.runLater(new Runnable() {
     override def run(): Unit = {
-      val loader = new FXMLLoader(getClass().getResource(s"Counters.fxml"))
-      val view: Parent = loader.load()
+      val (appComponent, appController) = Counters()
 
-      val root = Dispatcher[AppModel, Action]
+      val root = Dispatcher[CountersModel, Action]
 
       val actions = Subject[Action]
       val changes = Subject[CountersModel]
 
-      val initModel = AppModel()
-      val stream = actions.scan(initModel) { (oldState, action) =>
-        val newState = root.update(action).run(oldState)._1
-        changes.onNext(newState.model)
-        newState
+      val initModel = CountersModel()
+      val stream = actions.observeOn(ComputationScheduler()).scan(initModel) { (oldState, action) =>
+        Try{
+          val newState = root.update(action).run(oldState)._1
+          changes.onNext(newState)
+          newState
+        } match {
+          case Success(newState) => newState
+          case Failure(error) =>
+            error.printStackTrace()
+            oldState
+        }
       }
 
-      changes.subscribe({in => println("changes: " + in)})
-      stream.subscribe({ in => })
+      actions.subscribe({ in => println(s"action: $in")})
+      changes.subscribe({in => println(s"changes: $in")})
+      stream.subscribe({ in => println(s"stream: $in")})
 
-      val controller = loader.getController[Counters]
-      controller.dispatch(root.fromLens(GenLens[AppModel](_.model)), actions, changes.distinctUntilChanged)
+      appController.dispatch(root.factory, actions, changes.observeOn(JavaFXScheduler()).distinctUntilChanged)
 
       actions.onNext(Nop)
       val stage = new Stage
-      stage.setScene(new Scene(view))
+      stage.setScene(new Scene(appComponent))
       stage.setTitle("CounterPair App")
       stage.show()
-
+      println("after show")
     }
   })
 
