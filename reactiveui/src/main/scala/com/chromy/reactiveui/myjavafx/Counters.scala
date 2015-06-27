@@ -19,17 +19,14 @@ import scala.collection.immutable.ListMap
 
 case class CountersModel(counters: List[CounterModel] = List())
 
-object Counters extends Module[CountersModel, Counters] {
+object Counters extends GenericModule[CountersModel, CountersDispatcher] {
 
   case object Add extends Action
-
-  case object Remove extends Action
 
   def upd(actions: Observer[Action])(model: CountersModel, action: Action): CountersModel = {
     val newModel = action match {
       case Add =>
-        val newModel = CounterModel()
-        model.copy(counters = newModel :: model.counters)
+        model.copy(counters = CounterModel() :: model.counters)
       case Counter.Close(uid) =>
         val splitted = model.counters.splitAt(model.counters.indexWhere(_.uid == uid))
         model.copy(counters = splitted._1 ::: splitted._2.tail)
@@ -44,6 +41,7 @@ case class CountersDispatcher(parent: Dispatcher[CountersModel, Action], actions
   changes.distinctUntilChanged.subscribe(subscriber)
 }
 
+
 class ListComponent(component: FlowPane, dispatcher: CountersDispatcher, factory: DispatcherFactory[List[CounterModel], Action]) {
 
   /**
@@ -57,8 +55,7 @@ class ListComponent(component: FlowPane, dispatcher: CountersDispatcher, factory
     input.onNext(map)
   }
 
-  def initaliState: UidMap = UidMap()
-
+  def initialState: UidMap = UidMap()
 
   /**
    * Job
@@ -79,7 +76,7 @@ class ListComponent(component: FlowPane, dispatcher: CountersDispatcher, factory
 
   private val myChanges = dispatcher.changes.map {_.counters.map { in => in.uid -> in}.toMap}
 
-  input.scan((initaliState, initaliState)) { case((beforePrevious, previous), actual) =>
+  input.scan((initialState, initialState)) { case((beforePrevious, previous), actual) =>
     (previous, actual)
   }.subscribe({in =>
     val (previous, actual) = in
@@ -91,12 +88,11 @@ class ListComponent(component: FlowPane, dispatcher: CountersDispatcher, factory
         dispatchers.remove(item.uid)
         component.getChildren.remove(index)
       case Added(index, item: CounterModel) =>
-        val (nodeToAdd, componentToAdd) = Counter()
-
         val disp = Dispatcher[CounterModel, Action]()
+
+        val (nodeToAdd, _, counterDispatcher) = JavaFXFactory[Counter](disp.factory, dispatcher.actions, myChanges.map { change => change(item.uid) })
         dispatchers.update(item.uid, disp)
 
-        val counterDispatcher = componentToAdd.dispatch(disp.factory, dispatcher.actions, myChanges.map { change => change(item.uid) })
         component.getChildren.add(index, nodeToAdd)
         counterDispatcher.subscriber.onNext(item)
     }
@@ -104,7 +100,7 @@ class ListComponent(component: FlowPane, dispatcher: CountersDispatcher, factory
 }
 
 
-class Counters extends HBox {
+class Counters extends GenericJavaFXModule[Counters.type] {
 
   @FXML private var _bAdd: Button = _
   @FXML private var _bRemove: Button = _
@@ -119,7 +115,7 @@ class Counters extends HBox {
 
   def pCounters = _pCounters
 
-  def subscriber(actions: Observer[Action], changes: Observable[CountersModel]) = new Subscriber[CountersModel]() {
+  class CountersSubscriber (actions: Observer[Action], changes: Observable[CountersModel]) extends Subscriber[CountersModel]() {
     override def onNext(model: CountersModel): Unit = {
       bAdd.setOnAction(() => actions.onNext(Add))
 
@@ -131,11 +127,11 @@ class Counters extends HBox {
     override def onCompleted(): Unit = super.onCompleted()
   }
 
-  def dispatch(parentFactory: DispatcherFactory[CountersModel, Action], actions: Observer[Action], changes: Observable[CountersModel]) = {
+  override def dispatch(parentFactory: DispatcherFactory[CountersModel, Action], actions: Observer[Action], changes: Observable[CountersModel]): CountersDispatcher = {
     val parent = parentFactory.subscribe(Counters.upd(actions))
-    dispatcher = CountersDispatcher(parent, actions, changes, subscriber(actions, changes))
+    dispatcher = CountersDispatcher(parent, actions, changes, new CountersSubscriber(actions, changes))
 
     myCounters = new ListComponent(pCounters, dispatcher, parent.fromLens(GenLens[CountersModel](_.counters)))
+    dispatcher
   }
-
 }
