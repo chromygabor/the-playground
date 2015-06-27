@@ -2,7 +2,8 @@ package com.chromy.reactiveui.myjavafx
 
 import java.net.URL
 import java.util.{ResourceBundle, UUID}
-import javafx.fxml.{Initializable, FXML}
+import javafx.fxml.{FXMLLoader, Initializable, FXML}
+import javafx.scene.Parent
 import javafx.scene.control.{Button, Label}
 import javafx.scene.layout.FlowPane
 
@@ -14,53 +15,33 @@ import rx.lang.scala.{Subscriber, Observable, Observer}
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
+import scala.reflect.ClassTag
 
-object Uid {
-  private var _id: Int = 0
+case class CounterModel(uid: String = Uid.nextUid().toString, value: Int = 0)
 
-  def nextUid() = {
-    val res = _id
-    _id = _id + 1
-    res
-  }
-}
-
-case class CounterModel(uid: String = Uid.nextUid().toString, value: Int = 0){
-  val id: String = UUID.randomUUID().toString
-}
-
-case class CounterD(parent: Dispatcher[CounterModel, Action], actions: Observer[Action], changes: Observable[CounterModel], subscriber: Subscriber[CounterModel]) {
+case class CounterDispatcher(parent: Dispatcher[CounterModel, Action], actions: Observer[Action], changes: Observable[CounterModel], subscriber: Subscriber[CounterModel]) {
   changes.distinctUntilChanged.subscribe(subscriber)
 }
 
-object Counter extends Module[CounterModel, Counter]{
+object Counter extends GenericModule[CounterModel, CounterDispatcher]{
 
   case class Increment(id: String) extends LocalAction
-
   case class Decrement(id: String) extends LocalAction
   case class Close(id: String) extends LocalAction
 
   def upd(action: Action, model: CounterModel): CounterModel = action match {
-    case Increment(model.id) =>
-      println(s"update: $model.uid")
+    case Close(model.uid) =>
+      model
+    case Increment(model.uid) =>
       model.copy(value = model.value + 1)
-    case Decrement(model.id) =>
-      println(s"update: $model.uid")
-      val newValue = model.value - 1
-      if (newValue == 0) {
-        Future {
-          println("We are waiting")
-          Thread.sleep(5000)
-          println("We are ready")
-        }
-      }
-      model.copy(value = newValue)
+    case Decrement(model.uid) =>
+      model.copy(value = model.value - 1)
     case _ => model
   }
 }
 
 
-class Counter extends Initializable {
+class Counter extends GenericJavaFXModule[Counter.type] {
   @FXML private var _lblCounter: Label = _
   @FXML private var _btnIncrement: Button = _
   @FXML private var _btnDecrement: Button = _
@@ -71,13 +52,13 @@ class Counter extends Initializable {
   lazy val btnDecrement = _btnDecrement
   lazy val btnClose = _btnClose
 
-  var dispatcher: CounterD = _
+  var dispatcher: CounterDispatcher = _
 
-  def subscriber(actions: Observer[Action], changes: Observable[CounterModel]) = new Subscriber[CounterModel]() {
+  class CounterSubscriber(actions: Observer[Action], changes: Observable[CounterModel]) extends Subscriber[CounterModel] {
     override def onNext(model: CounterModel): Unit = {
       lblCounter.setText(model.value.toString)
-      btnIncrement.setOnAction { () => actions.onNext(Increment(model.id)) }
-      btnDecrement.setOnAction { () => actions.onNext(Decrement(model.id)) }
+      btnIncrement.setOnAction { () => actions.onNext(Increment(model.uid)) }
+      btnDecrement.setOnAction { () => actions.onNext(Decrement(model.uid)) }
       btnClose.setOnAction { () => actions.onNext(Close(model.uid))}
     }
 
@@ -86,14 +67,9 @@ class Counter extends Initializable {
     override def onCompleted(): Unit = super.onCompleted()
   }
 
-
-  def dispatch(parentFactory: DispatcherFactory[CounterModel, Action], actions: Observer[Action], changes: Observable[CounterModel]): CounterD = {
+  override def dispatch(parentFactory: DispatcherFactory[CounterModel, Action], actions: Observer[Action], changes: Observable[CounterModel]): CounterDispatcher = {
     val parent = parentFactory({ action => State[CounterModel, Action] { model => Counter.upd(action, model) -> action}})
-    dispatcher = CounterD(parent, actions, changes, subscriber(actions, changes))
+    dispatcher = CounterDispatcher(parent, actions, changes, new CounterSubscriber(actions, changes))
     dispatcher
-  }
-
-  override def initialize(location: URL, resources: ResourceBundle): Unit = {
-    
   }
 }
