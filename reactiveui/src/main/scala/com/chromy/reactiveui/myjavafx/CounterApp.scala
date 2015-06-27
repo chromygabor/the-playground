@@ -1,137 +1,130 @@
 package com.chromy.reactiveui.myjavafx
 
-import javafx.fxml.FXML
-import javafx.scene.control.Button
-import javafx.scene.layout.{FlowPane, HBox}
+import java.util.concurrent.Executor
+import javafx.application.Platform
+import javafx.embed.swing.JFXPanel
+import javafx.fxml.FXMLLoader
+import javafx.scene.{Scene, Parent}
+import javafx.stage.Stage
 
+import com.chromy.reactiveui.Dispatcher
 import com.chromy.reactiveui.Dispatcher.DispatcherFactory
-import com.chromy.reactiveui.Utils._
-import com.chromy.reactiveui._
-import com.chromy.reactiveui.myjavafx.CounterApp.Nop
-import com.chromy.reactiveui.myjavafx.Counters.Add
-import monocle.Lens
 import monocle.macros.GenLens
-import rx.lang.scala.{Observable, Observer, Subject, Subscriber}
+import rx.lang.scala.schedulers.ComputationScheduler
+import rx.lang.scala.{Subject, Observable, Observer}
+import rx.lang.scala.{Scheduler => ScalaScheduler}
+import rx.schedulers.Schedulers
 
-import scala.collection.immutable.ListMap
+import scala.util.{Failure, Success, Try}
 
+/**
+ * Created by chrogab on 2015.06.04..
+ */
+trait Action
+trait LocalAction extends Action
 
+object Uid {
+  private var _id: Int = 0
 
-case class CountersModel(counters: List[CounterModel] = List())
+  def nextUid() = {
+    val res = _id
+    _id = _id + 1
+    res
+  }
+}
 
-object Counters extends GenericModule[CountersModel, CountersDispatcher] {
-
-  case object Add extends Action
-
-  def upd(actions: Observer[Action])(model: CountersModel, action: Action): CountersModel = {
-    val newModel = action match {
-      case Add =>
-        model.copy(counters = CounterModel() :: model.counters)
-      case Counter.Close(uid) =>
-        val splitted = model.counters.splitAt(model.counters.indexWhere(_.uid == uid))
-        model.copy(counters = splitted._1 ::: splitted._2.tail)
-      case _ => model
+object JavaFXScheduler {
+  def apply() = {
+    new ScalaScheduler {
+      val asJavaScheduler = Schedulers.from(new Executor {
+        override def execute(command: Runnable): Unit = Platform.runLater(command)
+      })
     }
-    println(s"upd: $model => $newModel")
-    newModel
   }
 }
 
-case class CountersDispatcher(parent: Dispatcher[CountersModel, Action], actions: Observer[Action], changes: Observable[CountersModel], subscriber: Subscriber[CountersModel]) {
-  changes.distinctUntilChanged.subscribe(subscriber)
+sealed trait Module {
+  type Model
+  type Dispatcher
+}
+
+trait GenericModule[M,D] extends Module {
+  type Model = M
+  type Dispatcher = D
+}
+
+sealed trait JavaFXModule {
+  type Controller
+  type Model
+  type Dispatcher
+
+  def dispatch(parentFactory: DispatcherFactory[Model, Action], actions: Observer[Action], changes: Observable[Model]): Dispatcher
+}
+
+trait GenericJavaFXModule[A <: Module] extends JavaFXModule {
+  type Controller = this.type
+  type Model = A#Model
+  type Dispatcher = A#Dispatcher
+}
+
+object JavaFXFactory {
+  def apply[T <: JavaFXModule : Manifest](parentFactory: DispatcherFactory[T#Model, Action], actions: Observer[Action], changes: Observable[T#Model]): (Parent, T, T#Dispatcher) = {
+
+    val ct = manifest[T]
+
+    val clazzName = if(ct.runtimeClass.getSimpleName.endsWith("$")) ct.runtimeClass.getSimpleName.dropRight(1) else ct.runtimeClass.getSimpleName
+    val loader = new FXMLLoader(getClass().getResource(s"$clazzName.fxml"))
+
+    println(clazzName)
+
+    val node:Parent = loader.load()
+    val controller = loader.getController[T]
+    val dispatcher = controller.dispatch(parentFactory.asInstanceOf[DispatcherFactory[controller.Model, Action]], actions, changes.asInstanceOf[Observable[controller.Model]])
+    (node, controller, dispatcher.asInstanceOf[T#Dispatcher])
+  }
 }
 
 
-class ListComponent(component: FlowPane, dispatcher: CountersDispatcher, factory: DispatcherFactory[List[CounterModel], Action]) {
+object CounterApp extends App {
+  val fxPanel = new JFXPanel()
 
-  /**
-   * Interface
-   */
-  type UidMap = Map[String, CounterModel]
-  def UidMap() = Map[String, CounterModel]()
+  case class AppModel(model: CountersModel = CountersModel())
+  case object Nop extends Action
 
-  def onNext(next: List[CounterModel]): Unit = {
-    val map = next.map { in => in.uid -> in}.toMap
-    input.onNext(map)
-  }
+  Platform.runLater(new Runnable() {
+    override def run(): Unit = {
 
-  def initialState: UidMap = UidMap()
+      val root = Dispatcher[CountersModel, Action]
 
-  /**
-   * Job
-   */
-  private val input = Subject[UidMap]()
+      val actions = Subject[Action]
+      val changes = Subject[CountersModel]
 
-  private val dispatchers = scala.collection.mutable.Map[String, Dispatcher[CounterModel, Action]]()
-
-  factory.subscribe { (newList, action) =>
-    newList.map { item =>
-      if (dispatchers.get(item.uid).isDefined) {
-        dispatchers(item.uid).update(action).run(item)._1
-      } else {
-        item
+      val initModel = CountersModel()
+      val stream = actions.observeOn(ComputationScheduler()).scan(initModel) { (oldState, action) =>
+        Try{
+          val newState = root.update(action).run(oldState)._1
+          changes.onNext(newState)
+          newState
+        } match {
+          case Success(newState) => newState
+          case Failure(error) =>
+            error.printStackTrace()
+            oldState
+        }
       }
-    }
-  }
 
-  private val myChanges = dispatcher.changes.map {_.counters.map { in => in.uid -> in}.toMap}
+      actions.subscribe({ in => println(s"action: $in")})
+      changes.subscribe({in => println(s"changes: $in")})
+      stream.subscribe({ in => println(s"stream: $in")})
 
-  input.scan((initialState, initialState)) { case((beforePrevious, previous), actual) =>
-    (previous, actual)
-  }.subscribe({in =>
-    val (previous, actual) = in
+      val (appComponent, appController, appDispatcher) = JavaFXFactory[Counters](root.factory, actions, changes.observeOn(JavaFXScheduler()).distinctUntilChanged)
+      actions.onNext(Nop)
 
-    val diff = ListMatcher.diff(previous.values.toList, actual.values.toList)(_.uid)
-
-    diff.foreach {
-      case Removed(index, item: CounterModel) =>
-        dispatchers.remove(item.uid)
-        component.getChildren.remove(index)
-      case Added(index, item: CounterModel) =>
-        val disp = Dispatcher[CounterModel, Action]()
-
-        val (nodeToAdd, _, counterDispatcher) = JavaFXFactory[Counter](disp.factory, dispatcher.actions, myChanges.map { change => change(item.uid) })
-        dispatchers.update(item.uid, disp)
-
-        component.getChildren.add(index, nodeToAdd)
-        counterDispatcher.subscriber.onNext(item)
+      val stage = new Stage
+      stage.setScene(new Scene(appComponent))
+      stage.setTitle("CounterPair App")
+      stage.show()
     }
   })
-}
 
-
-class Counters extends GenericJavaFXModule[Counters.type] {
-
-  @FXML private var _bAdd: Button = _
-  @FXML private var _bRemove: Button = _
-
-  @FXML private var _pCounters: FlowPane = _
-
-  var dispatcher: CountersDispatcher = _
-
-  var myCounters: ListComponent = _
-
-  def bAdd = _bAdd
-
-  def pCounters = _pCounters
-
-  class CountersSubscriber (actions: Observer[Action], changes: Observable[CountersModel]) extends Subscriber[CountersModel]() {
-    override def onNext(model: CountersModel): Unit = {
-      bAdd.setOnAction(() => actions.onNext(Add))
-
-      myCounters.onNext(model.counters)
-    }
-
-    override def onError(error: Throwable): Unit = super.onError(error)
-
-    override def onCompleted(): Unit = super.onCompleted()
-  }
-
-  override def dispatch(parentFactory: DispatcherFactory[CountersModel, Action], actions: Observer[Action], changes: Observable[CountersModel]): CountersDispatcher = {
-    val parent = parentFactory.subscribe(Counters.upd(actions))
-    dispatcher = CountersDispatcher(parent, actions, changes, new CountersSubscriber(actions, changes))
-
-    myCounters = new ListComponent(pCounters, dispatcher, parent.fromLens(GenLens[CountersModel](_.counters)))
-    dispatcher
-  }
 }
