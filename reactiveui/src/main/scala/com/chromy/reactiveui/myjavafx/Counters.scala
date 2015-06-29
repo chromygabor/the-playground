@@ -94,7 +94,7 @@ class ListComponent(component: FlowPane, dispatcher: CountersDispatcher, factory
         dispatchers.update(item.uid, disp)
 
         component.getChildren.add(index, nodeToAdd)
-        counterDispatcher.subscriber.onNext(item)
+        //counterDispatcher.subscriber.onNext(item)
     }
   })
 }

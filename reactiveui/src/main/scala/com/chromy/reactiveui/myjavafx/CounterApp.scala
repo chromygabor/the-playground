@@ -4,15 +4,13 @@ import java.util.concurrent.Executor
 import javafx.application.Platform
 import javafx.embed.swing.JFXPanel
 import javafx.fxml.FXMLLoader
-import javafx.scene.{Scene, Parent}
+import javafx.scene.{Parent, Scene}
 import javafx.stage.Stage
 
 import com.chromy.reactiveui.Dispatcher
 import com.chromy.reactiveui.Dispatcher.DispatcherFactory
-import monocle.macros.GenLens
 import rx.lang.scala.schedulers.ComputationScheduler
-import rx.lang.scala.{Subject, Observable, Observer}
-import rx.lang.scala.{Scheduler => ScalaScheduler}
+import rx.lang.scala.{Observable, Observer, Scheduler => ScalaScheduler, Subject}
 import rx.schedulers.Schedulers
 
 import scala.util.{Failure, Success, Try}
@@ -21,7 +19,12 @@ import scala.util.{Failure, Success, Try}
  * Created by chrogab on 2015.06.04..
  */
 trait Action
+
 trait LocalAction extends Action
+
+trait ActionWrapper extends Action {
+  val action: Action
+}
 
 object Uid {
   private var _id: Int = 0
@@ -48,7 +51,7 @@ sealed trait Module {
   type Dispatcher
 }
 
-trait GenericModule[M,D] extends Module {
+trait GenericModule[M, D] extends Module {
   type Model = M
   type Dispatcher = D
 }
@@ -72,12 +75,10 @@ object JavaFXFactory {
 
     val ct = manifest[T]
 
-    val clazzName = if(ct.runtimeClass.getSimpleName.endsWith("$")) ct.runtimeClass.getSimpleName.dropRight(1) else ct.runtimeClass.getSimpleName
+    val clazzName = if (ct.runtimeClass.getSimpleName.endsWith("$")) ct.runtimeClass.getSimpleName.dropRight(1) else ct.runtimeClass.getSimpleName
     val loader = new FXMLLoader(getClass().getResource(s"$clazzName.fxml"))
 
-    println(clazzName)
-
-    val node:Parent = loader.load()
+    val node: Parent = loader.load()
     val controller = loader.getController[T]
     val dispatcher = controller.dispatch(parentFactory.asInstanceOf[DispatcherFactory[controller.Model, Action]], actions, changes.asInstanceOf[Observable[controller.Model]])
     (node, controller, dispatcher.asInstanceOf[T#Dispatcher])
@@ -89,6 +90,7 @@ object CounterApp extends App {
   val fxPanel = new JFXPanel()
 
   case class AppModel(model: CountersModel = CountersModel())
+
   case object Nop extends Action
 
   Platform.runLater(new Runnable() {
@@ -101,7 +103,7 @@ object CounterApp extends App {
 
       val initModel = CountersModel()
       val stream = actions.observeOn(ComputationScheduler()).scan(initModel) { (oldState, action) =>
-        Try{
+        Try {
           val newState = root.update(action).run(oldState)._1
           changes.onNext(newState)
           newState
@@ -113,9 +115,11 @@ object CounterApp extends App {
         }
       }
 
-      actions.subscribe({ in => println(s"action: $in")})
-      changes.subscribe({in => println(s"changes: $in")})
-      stream.subscribe({ in => println(s"stream: $in")})
+      actions.subscribe({ in => println(s"action: $in") })
+      changes.subscribe({ in => println(s"changes: $in\n======================") })
+      stream.subscribe({ in =>
+        //println(s"stream: $in")
+      })
 
       val (appComponent, appController, appDispatcher) = JavaFXFactory[Counters](root.factory, actions, changes.observeOn(JavaFXScheduler()).distinctUntilChanged)
       actions.onNext(Nop)

@@ -1,41 +1,100 @@
 package com.chromy.reactiveui.myjavafx
 
-import java.net.URL
-import java.util.{ResourceBundle, UUID}
-import javafx.fxml.{FXMLLoader, Initializable, FXML}
-import javafx.scene.Parent
+import javafx.fxml.FXML
 import javafx.scene.control.{Button, Label}
-import javafx.scene.layout.FlowPane
 
-import com.chromy.reactiveui.Dispatcher
 import com.chromy.reactiveui.Dispatcher.DispatcherFactory
 import com.chromy.reactiveui.Utils._
-import com.chromy.reactiveui.myjavafx.Counter.{Close, Decrement, Increment}
-import rx.lang.scala.{Subscriber, Observable, Observer}
+import com.chromy.reactiveui.myjavafx.Counter.{ActualState, Close, Decrement, Increment}
+import com.chromy.reactiveui.myjavafx.CounterApp.Nop
+import rx.lang.scala.schedulers.ComputationScheduler
+import rx.lang.scala.{Observable, Observer, Subject, Subscriber}
 
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
-import scala.reflect.ClassTag
+import scala.util.{Failure, Success, Try}
 
-case class CounterModel(uid: String = Uid.nextUid().toString, value: Int = 0)
+case class CounterModel(uid: String = Uid.nextUid().toString, value: Int = 0, buttonEnabled: Boolean = true)
 
-case class CounterDispatcher(parent: Dispatcher[CounterModel, Action], actions: Observer[Action], changes: Observable[CounterModel], subscriber: Subscriber[CounterModel]) {
+case class CounterDispatcher(parentFactory: DispatcherFactory[CounterModel, Action], private val actionsChannel: Observer[Action], changes: Observable[CounterModel], private val getSubscriber: (Observer[Action]) => Subscriber[CounterModel]) {
+  //  private val parent = parentFactory({ action => State[CounterModel, Action] { model => Counter.upd(action, model) -> action } })
+  private val parent = parentFactory.subscribe { (prevState, action) =>
+    println(s"subscriber update: $action")
+    action match {
+      case ActualState(_, actualState) => actualState
+      case e: ActionWrapper => Counter.upd(e.action, prevState, actionsChannel)
+      case e: Action => Counter.upd(e, prevState, actionsChannel)
+    }
+  }
+
+  val actions = Subject[Action]
+
+  val subscriber = getSubscriber(actions)
+
+  val stream = actions.observeOn(ComputationScheduler()).scan((null.asInstanceOf[CounterModel], null.asInstanceOf[CounterModel], Nop.asInstanceOf[Action])) { case ((beforePrevState, prevState, prevAction), action) =>
+    Try {
+      val newState = Counter.upd(action, prevState, actionsChannel)
+      newState
+    } match {
+      case Success(newState) => (prevState, newState, action)
+      case Failure(error) =>
+        error.printStackTrace()
+        (beforePrevState, prevState, prevAction)
+    }
+  }
+
+  stream.drop(1).observeOn(JavaFXScheduler()).distinctUntilChanged.subscribe({ input =>
+    println(s"input: $input")
+    input match {
+      case (prevState, actualState, action) =>
+        action match {
+          case e: LocalAction => subscriber.onNext(actualState)
+          case e => actionsChannel.onNext(ActualState(e, actualState))
+        }
+
+    }
+  })
+
+//  changes.distinctUntilChanged.subscribe({state =>
+//    println(s"changes received: $state")
+//  })
+
   changes.distinctUntilChanged.subscribe(subscriber)
 }
 
-object Counter extends GenericModule[CounterModel, CounterDispatcher]{
+object Counter extends GenericModule[CounterModel, CounterDispatcher] {
+  import scala.concurrent.ExecutionContext.Implicits.global
 
   case class Increment(id: String) extends LocalAction
+
   case class Decrement(id: String) extends LocalAction
+
   case class Close(id: String) extends LocalAction
 
-  def upd(action: Action, model: CounterModel): CounterModel = action match {
+  case class ActualState(action: Action, state: CounterModel) extends ActionWrapper
+
+  def upd(action: Action, model: CounterModel, actionsChannel: Observer[Action]): CounterModel = action match {
     case Close(model.uid) =>
       model
     case Increment(model.uid) =>
-      model.copy(value = model.value + 1)
+      Future {
+        println("Working....")
+        Thread.sleep(5000)
+        println("Ready....")
+        model.copy(value = model.value + 1)
+      } map { newState =>
+        actionsChannel.onNext(ActualState(Nop, newState))
+      }
+      model.copy(buttonEnabled = false)
     case Decrement(model.uid) =>
-      model.copy(value = model.value - 1)
+//      Future {
+//        Thread.sleep(2000)
+//        model.copy(value = model.value - 1)
+//      } map { newState =>
+//        actionsChannel.onNext(ActualState(Nop, newState))
+//      }
+
+      model.copy(buttonEnabled = false)
+
     case _ => model
   }
 }
@@ -52,24 +111,28 @@ class Counter extends GenericJavaFXModule[Counter.type] {
   lazy val btnDecrement = _btnDecrement
   lazy val btnClose = _btnClose
 
-  var dispatcher: CounterDispatcher = _
+  def subscriber(changes: Observable[CounterModel]): (Observer[Action]) => Subscriber[CounterModel] = { actions =>
+    new Subscriber[CounterModel] {
+      override def onNext(model: CounterModel): Unit = {
 
-  class CounterSubscriber(actions: Observer[Action], changes: Observable[CounterModel]) extends Subscriber[CounterModel] {
-    override def onNext(model: CounterModel): Unit = {
-      lblCounter.setText(model.value.toString)
-      btnIncrement.setOnAction { () => actions.onNext(Increment(model.uid)) }
-      btnDecrement.setOnAction { () => actions.onNext(Decrement(model.uid)) }
-      btnClose.setOnAction { () => actions.onNext(Close(model.uid))}
+        println(s"render: $model")
+
+        btnIncrement.setDisable(!model.buttonEnabled)
+        btnDecrement.setDisable(!model.buttonEnabled)
+
+        lblCounter.setText(model.value.toString)
+        btnIncrement.setOnAction { () => actions.onNext(Increment(model.uid)) }
+        btnDecrement.setOnAction { () => actions.onNext(Decrement(model.uid)) }
+        btnClose.setOnAction { () => actions.onNext(Close(model.uid)) }
+      }
+
+      override def onError(error: Throwable): Unit = super.onError(error)
+
+      override def onCompleted(): Unit = super.onCompleted()
     }
-
-    override def onError(error: Throwable): Unit = super.onError(error)
-
-    override def onCompleted(): Unit = super.onCompleted()
   }
 
   override def dispatch(parentFactory: DispatcherFactory[CounterModel, Action], actions: Observer[Action], changes: Observable[CounterModel]): CounterDispatcher = {
-    val parent = parentFactory({ action => State[CounterModel, Action] { model => Counter.upd(action, model) -> action}})
-    dispatcher = CounterDispatcher(parent, actions, changes, new CounterSubscriber(actions, changes))
-    dispatcher
+    CounterDispatcher(parentFactory, actions, changes, subscriber(changes))
   }
 }
