@@ -15,22 +15,17 @@ import scala.util.{Failure, Success, Try}
 
 case class CounterModel(uid: String = Uid.nextUid().toString, value: Int = 0, buttonEnabled: Boolean = true)
 
-case class CounterDispatcher(parentFactory: DispatcherFactory[CounterModel, Action], private val actionsChannel: Observer[Action], changes: Observable[CounterModel], private val getSubscriber: (Observer[Action]) => Subscriber[CounterModel]) {
+case class CounterDispatcher(parentFactory: DispatcherFactory[CounterModel, Action],
+                             private val actionsChannel: Observer[Action], changes: Observable[CounterModel],
+                             private val getSubscriber: (Observer[Action]) => Subscriber[CounterModel],
+                             initialState: CounterModel = CounterModel()) {
   //  private val parent = parentFactory({ action => State[CounterModel, Action] { model => Counter.upd(action, model) -> action } })
-  private val parent = parentFactory.subscribe { (prevState, action) =>
-    println(s"subscriber update: $action")
-    action match {
-      case ActualState(_, actualState) => actualState
-      case e: ActionWrapper => Counter.upd(e.action, prevState, actionsChannel)
-      case e: Action => Counter.upd(e, prevState, actionsChannel)
-    }
-  }
 
   val actions = Subject[Action]
 
   val subscriber = getSubscriber(actions)
 
-  val stream = actions.observeOn(ComputationScheduler()).scan((null.asInstanceOf[CounterModel], null.asInstanceOf[CounterModel], Nop.asInstanceOf[Action])) { case ((beforePrevState, prevState, prevAction), action) =>
+  val stream = actions.observeOn(ComputationScheduler()).scan((initialState, initialState, Nop.asInstanceOf[Action])) { case ((beforePrevState, prevState, prevAction), action) =>
     Try {
       val newState = Counter.upd(action, prevState, actionsChannel)
       newState
@@ -53,6 +48,16 @@ case class CounterDispatcher(parentFactory: DispatcherFactory[CounterModel, Acti
 
     }
   })
+
+  private val parent = parentFactory.subscribe { (prevState, action) =>
+    println(s"subscriber update: $action")
+    action match {
+      case ActualState(_, actualState) => actualState
+      case e: ActionWrapper => Counter.upd(e.action, prevState, actions)
+      case e: Action => Counter.upd(e, prevState, actions)
+    }
+  }
+
 
 //  changes.distinctUntilChanged.subscribe({state =>
 //    println(s"changes received: $state")
@@ -132,7 +137,7 @@ class Counter extends GenericJavaFXModule[Counter.type] {
     }
   }
 
-  override def dispatch(parentFactory: DispatcherFactory[CounterModel, Action], actions: Observer[Action], changes: Observable[CounterModel]): CounterDispatcher = {
-    CounterDispatcher(parentFactory, actions, changes, subscriber(changes))
+  override def dispatch(parentFactory: DispatcherFactory[CounterModel, Action], actions: Observer[Action], changes: Observable[CounterModel], initialState: CounterModel): CounterDispatcher = {
+    CounterDispatcher(parentFactory, actions, changes, subscriber(changes), initialState)
   }
 }

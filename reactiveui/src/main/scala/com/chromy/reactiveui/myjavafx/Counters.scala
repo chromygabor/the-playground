@@ -90,7 +90,7 @@ class ListComponent(component: FlowPane, dispatcher: CountersDispatcher, factory
       case Added(index, item: CounterModel) =>
         val disp = Dispatcher[CounterModel, Action]()
 
-        val (nodeToAdd, _, counterDispatcher) = JavaFXFactory[Counter](disp.factory, dispatcher.actions, myChanges.map { change => change(item.uid) })
+        val (nodeToAdd, _, counterDispatcher) = JavaFXFactory[Counter](disp.factory, dispatcher.actions, myChanges.map { change => change(item.uid) }, item)
         dispatchers.update(item.uid, disp)
 
         component.getChildren.add(index, nodeToAdd)
@@ -127,7 +127,7 @@ class Counters extends GenericJavaFXModule[Counters.type] {
     override def onCompleted(): Unit = super.onCompleted()
   }
 
-  override def dispatch(parentFactory: DispatcherFactory[CountersModel, Action], actions: Observer[Action], changes: Observable[CountersModel]): CountersDispatcher = {
+  override def dispatch(parentFactory: DispatcherFactory[CountersModel, Action], actions: Observer[Action], changes: Observable[CountersModel], initialState: CountersModel): CountersDispatcher = {
     val parent = parentFactory.subscribe(Counters.upd(actions))
     dispatcher = CountersDispatcher(parent, actions, changes, new CountersSubscriber(actions, changes))
 

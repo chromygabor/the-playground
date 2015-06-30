@@ -61,7 +61,7 @@ sealed trait JavaFXModule {
   type Model
   type Dispatcher
 
-  def dispatch(parentFactory: DispatcherFactory[Model, Action], actions: Observer[Action], changes: Observable[Model]): Dispatcher
+  def dispatch(parentFactory: DispatcherFactory[Model, Action], actions: Observer[Action], changes: Observable[Model], initialState: Model): Dispatcher
 }
 
 trait GenericJavaFXModule[A <: Module] extends JavaFXModule {
@@ -71,7 +71,7 @@ trait GenericJavaFXModule[A <: Module] extends JavaFXModule {
 }
 
 object JavaFXFactory {
-  def apply[T <: JavaFXModule : Manifest](parentFactory: DispatcherFactory[T#Model, Action], actions: Observer[Action], changes: Observable[T#Model]): (Parent, T, T#Dispatcher) = {
+  def apply[T <: JavaFXModule : Manifest](parentFactory: DispatcherFactory[T#Model, Action], actions: Observer[Action], changes: Observable[T#Model], initialState: T#Model): (Parent, T, T#Dispatcher) = {
 
     val ct = manifest[T]
 
@@ -80,7 +80,7 @@ object JavaFXFactory {
 
     val node: Parent = loader.load()
     val controller = loader.getController[T]
-    val dispatcher = controller.dispatch(parentFactory.asInstanceOf[DispatcherFactory[controller.Model, Action]], actions, changes.asInstanceOf[Observable[controller.Model]])
+    val dispatcher = controller.dispatch(parentFactory.asInstanceOf[DispatcherFactory[controller.Model, Action]], actions, changes.asInstanceOf[Observable[controller.Model]], initialState.asInstanceOf[controller.Model])
     (node, controller, dispatcher.asInstanceOf[T#Dispatcher])
   }
 }
@@ -121,7 +121,7 @@ object CounterApp extends App {
         //println(s"stream: $in")
       })
 
-      val (appComponent, appController, appDispatcher) = JavaFXFactory[Counters](root.factory, actions, changes.observeOn(JavaFXScheduler()).distinctUntilChanged)
+      val (appComponent, appController, appDispatcher) = JavaFXFactory[Counters](root.factory, actions, changes.observeOn(JavaFXScheduler()).distinctUntilChanged, initModel)
       actions.onNext(Nop)
 
       val stage = new Stage
