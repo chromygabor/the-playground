@@ -105,7 +105,7 @@ object CounterApp extends App {
       val stream = actions.observeOn(ComputationScheduler()).scan(initModel) { (oldState, action) =>
         Try {
           val newState = root.update(action).run(oldState)._1
-          changes.onNext(newState)
+          println(s"[DSP-Main(0)] - An action received in the main loop: $action -- $oldState => $newState")
           newState
         } match {
           case Success(newState) => newState
@@ -115,10 +115,11 @@ object CounterApp extends App {
         }
       }
 
-      actions.subscribe({ in => println(s"action: $in") })
-      changes.subscribe({ in => println(s"changes: $in\n======================") })
-      stream.subscribe({ in =>
-        //println(s"stream: $in")
+      //actions.subscribe({ in => println(s"[DSP-Main(0)] - An action received in the main loop: $in") })
+//      changes.subscribe({ in => println(s"[DSP-MAIN] - A change is published from main loop: $in\n======================") })
+      stream.subscribe({ newState =>
+        println(s"[DSP-Main(0)] - A publishing a change: $newState")
+        changes.onNext(newState)
       })
 
       val (appComponent, appController, appDispatcher) = JavaFXFactory[Counters](root.factory, actions, changes.observeOn(JavaFXScheduler()).distinctUntilChanged, initModel)
