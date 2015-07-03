@@ -16,14 +16,13 @@ import rx.lang.scala.{Observable, Observer, Subject, Subscriber}
 import scala.collection.immutable.ListMap
 
 
-
-case class CountersModel(counters: List[CounterModel] = List())
+case class CountersModel(uid: String = Uid.nextUid().toString, counters: List[CounterModel] = List())
 
 object Counters extends GenericModule[CountersModel, CountersDispatcher] {
 
   case object Add extends Action
 
-  def upd(actions: Observer[Action])(model: CountersModel, action: Action): CountersModel = {
+  def upd(action: Action, model: CountersModel, actionsChannel: Observer[Action]): CountersModel = {
     val newModel = action match {
       case Add =>
         model.copy(counters = CounterModel() :: model.counters)
@@ -32,13 +31,29 @@ object Counters extends GenericModule[CountersModel, CountersDispatcher] {
         model.copy(counters = splitted._1 ::: splitted._2.tail)
       case _ => model
     }
-    println(s"upd: $model => $newModel")
     newModel
   }
 }
 
-case class CountersDispatcher(parent: Dispatcher[CountersModel, Action], actions: Observer[Action], changes: Observable[CountersModel], subscriber: Subscriber[CountersModel]) {
-  changes.distinctUntilChanged.subscribe(subscriber)
+case class CountersDispatcher(parentFactory: DispatcherFactory[CountersModel, Action],
+                              protected val channel: Observer[Action], changes: Observable[CountersModel],
+                              protected val getSubscriber: (Observer[Action]) => Subscriber[CountersModel],
+                              initialState: CountersModel = CountersModel(),
+                              update: (Action, CountersModel, Observer[Action]) => CountersModel = Counters.upd) extends SimpleDispatcher[CountersModel] {
+
+  //  private val dispatchers = scala.collection.mutable.Map[String, Dispatcher[CounterModel, Action]]()
+  //
+  //  val countersParent = parent.fromLens(GenLens[CountersModel](_.counters))
+  //  countersParent.subscribe { (newList, action) =>
+  //    newList.map { item =>
+  //      if (dispatchers.get(item.uid).isDefined) {
+  //        dispatchers(item.uid).update(action).run(item)._1
+  //      } else {
+  //        item
+  //      }
+  //    }
+  //    newList
+  //  }
 }
 
 
@@ -48,10 +63,11 @@ class ListComponent(component: FlowPane, dispatcher: CountersDispatcher, factory
    * Interface
    */
   type UidMap = Map[String, CounterModel]
+
   def UidMap() = Map[String, CounterModel]()
 
   def onNext(next: List[CounterModel]): Unit = {
-    val map = next.map { in => in.uid -> in}.toMap
+    val map = next.map { in => in.uid -> in }.toMap
     input.onNext(map)
   }
 
@@ -74,11 +90,13 @@ class ListComponent(component: FlowPane, dispatcher: CountersDispatcher, factory
     }
   }
 
-  private val myChanges = dispatcher.changes.map {_.counters.map { in => in.uid -> in}.toMap}
+  private val myChanges = dispatcher.changes.map {
+    _.counters.map { in => in.uid -> in }.toMap
+  }
 
-  input.scan((initialState, initialState)) { case((beforePrevious, previous), actual) =>
+  input.scan((initialState, initialState)) { case ((beforePrevious, previous), actual) =>
     (previous, actual)
-  }.subscribe({in =>
+  }.subscribe({ in =>
     val (previous, actual) = in
 
     val diff = ListMatcher.diff(previous.values.toList, actual.values.toList)(_.uid)
@@ -94,7 +112,9 @@ class ListComponent(component: FlowPane, dispatcher: CountersDispatcher, factory
         dispatchers.update(item.uid, disp)
 
         component.getChildren.add(index, nodeToAdd)
-        //counterDispatcher.subscriber.onNext(item)
+        counterDispatcher.init()
+
+        counterDispatcher.subscriber.onNext(item)
     }
   })
 }
@@ -109,29 +129,29 @@ class Counters extends GenericJavaFXModule[Counters.type] {
 
   var dispatcher: CountersDispatcher = _
 
-  var myCounters: ListComponent = _
+  lazy val bAdd = _bAdd
 
-  def bAdd = _bAdd
+  lazy val pCounters = new ListComponent(_pCounters, dispatcher, dispatcher.parent.fromLens(GenLens[CountersModel](_.counters)))
 
-  def pCounters = _pCounters
+  def subscriber(changes: Observable[CountersModel]): (Observer[Action]) => Subscriber[CountersModel] = { actions =>
+    new Subscriber[CountersModel] {
+      override def onNext(model: CountersModel): Unit = {
+        bAdd.setOnAction(() => actions.onNext(Add))
 
-  class CountersSubscriber (actions: Observer[Action], changes: Observable[CountersModel]) extends Subscriber[CountersModel]() {
-    override def onNext(model: CountersModel): Unit = {
-      bAdd.setOnAction(() => actions.onNext(Add))
+        pCounters.onNext(model.counters)
+      }
 
-      myCounters.onNext(model.counters)
+      override def onError(error: Throwable): Unit = super.onError(error)
+
+      override def onCompleted(): Unit = super.onCompleted()
     }
-
-    override def onError(error: Throwable): Unit = super.onError(error)
-
-    override def onCompleted(): Unit = super.onCompleted()
   }
 
-  override def dispatch(parentFactory: DispatcherFactory[CountersModel, Action], actions: Observer[Action], changes: Observable[CountersModel], initialState: CountersModel): CountersDispatcher = {
-    val parent = parentFactory.subscribe(Counters.upd(actions))
-    dispatcher = CountersDispatcher(parent, actions, changes, new CountersSubscriber(actions, changes))
 
-    myCounters = new ListComponent(pCounters, dispatcher, parent.fromLens(GenLens[CountersModel](_.counters)))
+  override def dispatch(parentFactory: DispatcherFactory[CountersModel, Action], actions: Observer[Action], changes: Observable[CountersModel], initialState: CountersModel): CountersDispatcher = {
+    dispatcher = CountersDispatcher(parentFactory, actions, changes, subscriber(changes))
+
+    dispatcher.init()
     dispatcher
   }
 }
