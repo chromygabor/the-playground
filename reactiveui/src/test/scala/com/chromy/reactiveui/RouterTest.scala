@@ -107,6 +107,7 @@ class RouterTest extends FunSpecLike {
 
     def update: (Action, Model,  Observer[Action]) => Model = MainComponent.update
 
+    def subscribe()
 
     def init() = renderer.onNext(initialState)
 
