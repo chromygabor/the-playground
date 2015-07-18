@@ -9,17 +9,17 @@ class ListMatcher {
 
 }
 
-trait ListOperation
+trait ListOperation[A]
 
-case class Removed[A](index: Int, item: A) extends ListOperation
-case class Added[A](index: Int, item: A) extends ListOperation
+case class Removed[A](index: Int, item: A) extends ListOperation[A]
+case class Added[A](index: Int, item: A) extends ListOperation[A]
 
 object ListMatcher {
-  def diff1[A](oldList: Seq[A], newList: Seq[A]): Seq[ListOperation] = {
+  def diff1[A](oldList: Seq[A], newList: Seq[A]): Seq[ListOperation[A]] = {
     diff[A,A](oldList, newList){elem: A => elem}
   }
 
-  def diff[A,B](ol: Seq[A], nl: Seq[A])(getId: A => B): Seq[ListOperation] = {
+  def diff[A,B](ol: Seq[A], nl: Seq[A])(getId: A => B): Seq[ListOperation[A]] = {
 
     val (_, oldAssoc, oldList) = ol.foldLeft((0, Map[B, (A, Int)](), List[B]())) { case ((index, mapAccu, listAccu), a) =>
       (index + 1,  mapAccu.updated(getId(a), (a, index)), getId(a) :: listAccu)

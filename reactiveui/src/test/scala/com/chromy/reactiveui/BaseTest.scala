@@ -35,7 +35,6 @@ trait BaseTest {
   }
 
   case class AddNumber(uid: String = "", number: Int) extends Action
-
   case class MulNumber(uid: String = "", number: Int) extends LocalAction
 
   case class MainModel(left: SubModel = SubModel(), right: SubModel = SubModel(), uid: String = Uid.nextUid().toString) extends Model[MainComponent]
@@ -43,19 +42,19 @@ trait BaseTest {
 
   case object AddItem extends Action
 
-  class MainComponent(val parentRouter: Router[MainModel], val initialState: MainModel = MainModel()) extends BaseComponent[MainModel] {
+  class MainComponent(val routerMapper: RouterMapper[MainModel], val initialState: MainModel = MainModel()) extends BaseComponent[MainModel] {
     override def update: (Action, MainModel, Observer[Action]) => MainModel = { (action, model, channel) =>
       model
     }
 
     class ChildrenComponents {
-      val left = new SubComponent(parentRouter.map(GenLens[MainModel](_.left)), initialState.left)
-      val right = new SubComponent(parentRouter.map(GenLens[MainModel](_.right)), initialState.right)
+      val left = new SubComponent(router.map(GenLens[MainModel](_.left)), initialState.left)
+      val right = new SubComponent(router.map(GenLens[MainModel](_.right)), initialState.right)
     }
     val childrenComponents = new ChildrenComponents
   }
 
-  class SubComponent(val parentRouter: Router[SubModel], val initialState: SubModel = SubModel()) extends BaseComponent[SubModel]  {
+  class SubComponent(val routerMapper: RouterMapper[SubModel], val initialState: SubModel = SubModel()) extends BaseComponent[SubModel]  {
     override def update: (Action, SubModel, Observer[Action]) => SubModel = { (action, model, channel) =>
       action match {
         case AddNumber(model.uid, toAdd) => model.copy(value = model.value + toAdd)
@@ -65,23 +64,23 @@ trait BaseTest {
     }
   }
 
-  case class ListModel(subs: List[SubModel] = Nil, uid: String = Uid.nextUid().toString) extends Model[ListComponent]
-  class ListComponent(val parentRouter: Router[ListModel], val initialState: ListModel = ListModel()) extends BaseComponent[ListModel] {
-    override def update: (Action, ListModel, Observer[Action]) => ListModel = { (action, model, channel) =>
-      action match {
-        case AddItem =>
-          val newList = SubModel() :: model.subs
-          model.copy(subs = newList)
-        case _ => model
-      }
-
-    }
-
-    class ChildrenComponents {
-      val lens = parentRouter.map(GenLens[ListModel](_.subs))
-      val subs = ListComponentOf[SubModel](lens)(router => new SubComponent(router))
-    }
-    val childrenComponents = new ChildrenComponents
-  }
+//  case class ListModel(subs: List[SubModel] = Nil, uid: String = Uid.nextUid().toString) extends Model[ListComponent]
+//  class ListComponent(val parentRouter: Router[ListModel], val initialState: ListModel = ListModel()) extends BaseComponent[ListModel] {
+//    override def update: (Action, ListModel, Observer[Action]) => ListModel = { (action, model, channel) =>
+//      action match {
+//        case AddItem =>
+//          val newList = SubModel() :: model.subs
+//          model.copy(subs = newList)
+//        case _ => model
+//      }
+//
+//    }
+//
+//    class ChildrenComponents {
+//      val lens = parentRouter.map(GenLens[ListModel](_.subs))
+//      val subs = ListComponentOf[SubModel](lens)(router => new SubComponent(router))
+//    }
+//    val childrenComponents = new ChildrenComponents
+//  }
 
 }

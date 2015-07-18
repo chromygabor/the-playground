@@ -9,9 +9,9 @@ class ComponentTest extends FunSpecLike {
 
 
   describe("Component") {
-    ignore("should update its state by an action") {
+    it("should update its state by an action") {
       new BaseTest {
-        val comp = TestComponent[MainComponent](MainModel()){(router, initialState) => new MainComponent(router, initialState)}
+        val comp = TestComponent[MainComponent](MainModel()){(mapper, initialState) => new MainComponent(mapper, initialState)}
         comp.channel.onNext(AddNumber("0", 10))
         assert(comp.state != None)
         assert(comp.state.get.left.value == 10)
@@ -47,17 +47,17 @@ class ComponentTest extends FunSpecLike {
       }
     }
 
-    it("should be able to handle lists") {
-      new BaseTest {
-        val comp = TestComponent[ListComponent](ListModel()){(router, initialState) => new ListComponent(router, initialState)}
-
-        comp.component.childrenComponents.subs.prependToList("ListComponent.subs")
-        comp.component.childrenComponents.subs.childrenComponents(0)
-        comp.channel.onNext(AddItem)
-        comp.channel.onNext(AddItem)
-        println(list)
-      }
-    }
+//    it("should be able to handle lists") {
+//      new BaseTest {
+//        val comp = TestComponent[ListComponent](ListModel()){(router, initialState) => new ListComponent(router, initialState)}
+//
+//        comp.component.childrenComponents.subs.prependToList("ListComponent.subs")
+//        //comp.component.childrenComponents.subs.childrenComponents(0)
+//        comp.channel.onNext(AddItem)
+//        comp.channel.onNext(AddItem)
+//        println(list)
+//      }
+//    }
 
   }
 }
