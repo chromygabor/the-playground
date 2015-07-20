@@ -18,7 +18,7 @@ class ComponentTest extends FunSpecLike {
         assert(comp.state.get.right.value == 0)
       }
     }
-    ignore("should update its state by a local action") {
+    it("should update its state by a local action") {
       new BaseTest {
 
         val comp = TestComponent[MainComponent](MainModel()){(router, initialState) => new MainComponent(router, initialState)}

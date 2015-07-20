@@ -2,12 +2,9 @@ package com.chromy.reactiveui
 
 import com.chromy.reactiveui.myjavafx.CounterApp.Nop
 import com.chromy.reactiveui.myjavafx._
-import monocle.macros.GenLens
-import rx.lang.scala.schedulers.ImmediateScheduler
 import rx.lang.scala.subjects.BehaviorSubject
 import rx.lang.scala.{Observable, Observer, Subject}
 
-import scala.collection.immutable.ListMap
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -19,7 +16,9 @@ trait Component {
   def router: Router[ModelType]
 
   def changes: Observable[ModelType] = router.changes.distinctUntilChanged
+
   def channel: Observer[Action] = router.channel
+
   def chain: UpdateChain[ModelType] = router.chain
 }
 
@@ -29,7 +28,9 @@ trait Model[C <: Component] {
 
 trait BaseComponent[M <: Model[_ <: Component]] extends Component {
   type ModelType = M
+
   protected def routerMapper: RouterMapper[ModelType]
+
   protected val initialState: ModelType
 
   def update: (Action, ModelType, Observer[Action]) => ModelType
@@ -70,12 +71,10 @@ trait BaseComponent[M <: Model[_ <: Component]] extends Component {
 
 
   changes.distinctUntilChanged.subscribe(
-    { change =>
-      println(s"[$name] new change from parent: $change")
-      _changes.onNext(change)
-    },
-    { error => _changes.onError(error) },
-    { () => _changes.onCompleted() }
+  { change =>
+    println(s"[$name] new change from parent: $change")
+    _changes.onNext(change)
+  }, { error => _changes.onError(error) }, { () => _changes.onCompleted() }
   )
 
   private val stream = _channel.scan((initialState, initialState, Nop.asInstanceOf[Action])) { case ((beforePrevState, prevState, prevAction), action) =>
@@ -135,82 +134,93 @@ trait BaseComponent[M <: Model[_ <: Component]] extends Component {
  */
 trait ListComponentOf[M <: Model[_ <: Component]] extends Component {
 
+  case class ListCompononentOfModel(routersToAdd: Map[String, (Int, ComponentType)], routersToRemove: Map[String, (Int, ComponentType)], uid: String = Uid.nextUid().toString) extends Model[ListComponentOf[M]]
+
+  type ModelType = ListCompononentOfModel
   type ComponentType = Component {type ModelType = M}
 
-  case class ListCompononentOfModel(routersToAdd: Map[String, (Int, Router[M])], routersToRemove: Map[String, Int], uid:String = Uid.nextUid().toString) extends Model[ListComponentOf[M]]
+  protected def routerMapper: RouterMapper[List[M]]
+
+  protected val initialState: ModelType
+
+  protected def create: Router[M] => ComponentType
 
   private lazy val name = s"DSP-ListComponentOf}"
   println(s"[$name] created with")
 
-
-  type ModelType = ListCompononentOfModel
-
-  protected def parentRouter: Router[List[M]]
-  protected def create: Router[M] => ComponentType
-
   val stream = Subject[ModelType]
 
-//  private var _routers = Map[String, Router[M]]()
-//  def routers = _routers
-//  def routers_=(newRouters: Map[String, Router[M]]) = _routers = newRouters
-
   private var _components = Map[String, ComponentType]()
+
   def childrenComponents = _components
+
   def childrenComponents_=(newComponents: Map[String, ComponentType]) = _components = newComponents
 
-  private val myChanges = parentRouter.changes.map ( _.map { in => in.uid -> in }.toMap )
 
-  parentRouter.chain.subscribe { (action, original, state) =>
+  val myRouter = routerMapper { (action, original, state) =>
     println(s"[$name] a new state was requested for $original and $action")
 
-    val diff = ListMatcher.diff(original, state) { _.uid }
+    val diff = ListMatcher.diff(original, state) {
+      _.uid
+    }
 
-    val (newComponents, toAdd, toRemove) = diff.foldLeft(childrenComponents, Map[String, (Int, ComponentType)](), Map[String, Int]() ) { case((routers, toAdd, toRemove), op) =>
+    val (newComponents, toAdd, toRemove) = diff.foldLeft(childrenComponents, Map[String, (Int, ComponentType)](), Map[String, (Int, ComponentType)]()) { case ((routers, toAdd, toRemove), op) =>
       op match {
         case Removed(index, item) =>
-          (routers - item.uid, toAdd, toRemove + (item.uid -> index))
+          (routers - item.uid, toAdd, toRemove + (item.uid -> (index, childrenComponents(item.uid))))
         case Added(index, item) =>
-
-          val component = create( new Router[M] {
-            override val changes: Observable[M] = myChanges.map { change => change(item.uid) }
-            override val chain: UpdateChain[M] = UpdateChain[M]
-            override val channel: Observer[Action] = parentRouter.channel
-          })
-
+          val component = createComponent(item)
           (childrenComponents.updated(item.uid, component), toAdd.updated(item.uid, (index, component)), toRemove)
       }
     }
 
     childrenComponents = newComponents
 
-    //stream.onNext(ListCompononentOfModel(routersToAdd, routersToRemove))
-//    val newState = state.map { in =>
-//      childrenComponents.get(in.uid) match {
-//        case Some(component) => component.chain.update(action, in)
-//        case _ => in
-//      }
-//    }
-//    newState
-    ???
+    stream.onNext(ListCompononentOfModel(toAdd, toRemove))
+    val newState = state.map { in =>
+      childrenComponents.get(in.uid) match {
+        case Some(component) => component.chain.update(action, in)
+        case _ => in
+      }
+    }
+    newState
   }
-  override val changes: Observable[ModelType] = stream.sample(parentRouter.changes)
-  override val channel: Observer[Action] = parentRouter.channel
 
-  changes.subscribe ({ model =>
+  private val myChanges = myRouter.changes.map(_.map { in => in.uid -> in }.toMap)
+
+  def createComponent(item: M): ComponentType = {
+    create(new Router[M] {
+      override val changes: Observable[M] = myChanges.map { change => change(item.uid) }
+      override val chain: UpdateChain[M] = UpdateChain[M]
+      override val channel: Observer[Action] = myRouter.channel
+    })
+  }
+
+  val router = new Router[ModelType] {
+    override val changes: Observable[ListCompononentOfModel] = stream.sample(myRouter.changes)
+    override val chain: UpdateChain[ListCompononentOfModel] = {
+      throw new IllegalStateException("This shouldn't be called because never registered")
+    }
+    override val channel: Observer[Action] = myRouter.channel
+  }
+
+  changes.subscribe({ model =>
     println(s"[$name] - Changes propagated: $model")
   })
 }
 
 
-//object ListComponentOf {
-//  def apply[M <: Model[_ <: Component]](iParentRouter: Router[List[M]])(iCreate: (Router[M] => Component {type ModelType = M})): ListComponentOf[M] = {
-//    val listComponentOf = new ListComponentOf[M] {
-//      override def parentRouter: Router[List[M]] = iParentRouter
-//      override def create: (Router[M]) => Component {type ModelType = M} = iCreate
-//    }
-//    listComponentOf
-//  }
-//}
+object ListComponentOf {
+  def apply[M <: Model[_ <: Component]](iRouterMapper: RouterMapper[List[M]])(iCreate: (Router[M] => Component {type ModelType = M})): ListComponentOf[M] = {
+    val listComponentOf = new ListComponentOf[M] {
+      override def routerMapper = iRouterMapper
+      override def create: (Router[M]) => Component {type ModelType = M} = iCreate
+
+      override protected val initialState: ListCompononentOfModel = ???
+    }
+    listComponentOf
+  }
+}
 
 object TestComponent {
 
