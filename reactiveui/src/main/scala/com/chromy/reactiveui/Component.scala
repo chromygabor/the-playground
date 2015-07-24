@@ -14,12 +14,6 @@ trait Component {
   type ModelType <: com.chromy.reactiveui.Model[_ <: Component]
 
   def router: Router[ModelType]
-
-  def changes: Observable[ModelType] = router.changes.distinctUntilChanged
-
-  def channel: Observer[Action] = router.channel
-
-  def chain: UpdateChain[ModelType] = router.chain
 }
 
 trait Model[C <: Component] {
@@ -31,7 +25,7 @@ trait BaseComponent[M <: Model[_ <: Component]] extends Component {
 
   protected def routerMapper: RouterMapper[ModelType]
 
-  protected val initialState: ModelType
+  protected def initialState: ModelType
 
   def update: (Action, ModelType, Observer[Action]) => ModelType
 
@@ -46,7 +40,7 @@ trait BaseComponent[M <: Model[_ <: Component]] extends Component {
   private lazy val name = s"DSP-${this.getClass.getSimpleName}(${initialState.uid})"
   println(s"[$name] created with $initialState")
 
-  val router = routerMapper { (action, prevState) =>
+  def subscriber: (Action, ModelType, ModelType) => ModelType = { (action, _, prevState) =>
     println(s"[$name] a new state was requested for $prevState and $action")
 
     action match {
@@ -69,8 +63,9 @@ trait BaseComponent[M <: Model[_ <: Component]] extends Component {
     }
   }
 
+  val router = routerMapper(subscriber)
 
-  changes.distinctUntilChanged.subscribe(
+  router.changes.distinctUntilChanged.subscribe(
   { change =>
     println(s"[$name] new change from parent: $change")
     _changes.onNext(change)
@@ -115,13 +110,13 @@ trait BaseComponent[M <: Model[_ <: Component]] extends Component {
           case action@StateChange(a, s: ModelType) =>
             val wrap = ActualState(a, s)
             println(s"[$name] action is StateChange sending to channel as a $wrap")
-            channel.onNext(wrap)
+            router.channel.onNext(wrap)
           case action: ActionWrapper =>
             println(s"[$name] action is already a WrapperAction so just send up to channel: ${action}")
-            channel.onNext(action)
+            router.channel.onNext(action)
           case action =>
             println(s"[$name] action is a simple action wrapping to ActualState and sending to channel: ${ActualState(action, actualState)}")
-            channel.onNext(ActualState(action, actualState))
+            router.channel.onNext(ActualState(action, actualState))
         }
     }
   })
@@ -141,7 +136,7 @@ trait ListComponentOf[M <: Model[_ <: Component]] extends Component {
 
   protected def routerMapper: RouterMapper[List[M]]
 
-  protected val initialState: ModelType
+  protected def initialState: ModelType
 
   protected def create: Router[M] => ComponentType
 
@@ -160,26 +155,30 @@ trait ListComponentOf[M <: Model[_ <: Component]] extends Component {
   val myRouter = routerMapper { (action, original, state) =>
     println(s"[$name] a new state was requested for $original and $action")
 
-    val diff = ListMatcher.diff(original, state) {
-      _.uid
+    val (toRemove, toAdd) = ListDiff.diff(original, state) ( _.uid )
+
+    val (_, toDelete) = toRemove.foldLeft((0, List[(M, Int)]())) { case ((removedItems, list), (hash, (item, index))) =>
+      val newItem = item -> (index - removedItems)
+      (removedItems + 1, newItem :: list)
     }
 
-    val (newComponents, toAdd, toRemove) = diff.foldLeft(childrenComponents, Map[String, (Int, ComponentType)](), Map[String, (Int, ComponentType)]()) { case ((routers, toAdd, toRemove), op) =>
-      op match {
-        case Removed(index, item) =>
-          (routers - item.uid, toAdd, toRemove + (item.uid -> (index, childrenComponents(item.uid))))
-        case Added(index, item) =>
-          val component = createComponent(item)
-          (childrenComponents.updated(item.uid, component), toAdd.updated(item.uid, (index, component)), toRemove)
-      }
-    }
 
-    childrenComponents = newComponents
+//    val (newComponents, toAdd, toRemove) = diff.foldLeft(childrenComponents, Map[String, (Int, ComponentType)](), Map[String, (Int, ComponentType)]()) { case ((routers, toAdd, toRemove), op) =>
+//      op match {
+//        case Removed(index, item) =>
+//          (routers - item.uid, toAdd, toRemove + (item.uid -> (index, childrenComponents(item.uid))))
+//        case Added(index, item) =>
+//          val component = createComponent(item)
+//          (childrenComponents.updated(item.uid, component), toAdd.updated(item.uid, (index, component)), toRemove)
+//      }
+//    }
 
-    stream.onNext(ListCompononentOfModel(toAdd, toRemove))
+//    childrenComponents = newComponents
+
+//    stream.onNext(ListCompononentOfModel(toAdd, toRemove))
     val newState = state.map { in =>
       childrenComponents.get(in.uid) match {
-        case Some(component) => component.chain.update(action, in)
+        case Some(component) => component.router.chain.update(action, in)
         case _ => in
       }
     }
@@ -198,13 +197,13 @@ trait ListComponentOf[M <: Model[_ <: Component]] extends Component {
 
   val router = new Router[ModelType] {
     override val changes: Observable[ListCompononentOfModel] = stream.sample(myRouter.changes)
-    override val chain: UpdateChain[ListCompononentOfModel] = {
+    override def chain: UpdateChain[ListCompononentOfModel] = {
       throw new IllegalStateException("This shouldn't be called because never registered")
     }
     override val channel: Observer[Action] = myRouter.channel
   }
 
-  changes.subscribe({ model =>
+  router.changes.subscribe({ model =>
     println(s"[$name] - Changes propagated: $model")
   })
 }
@@ -216,7 +215,7 @@ object ListComponentOf {
       override def routerMapper = iRouterMapper
       override def create: (Router[M]) => Component {type ModelType = M} = iCreate
 
-      override protected val initialState: ListCompononentOfModel = ???
+      override protected def initialState: ListCompononentOfModel = ???
     }
     listComponentOf
   }
@@ -263,10 +262,6 @@ object TestComponent {
 
       }
       val component = f(router.mapper, initialState)
-
-      override def changes: Observable[ModelType] = router.changes.asInstanceOf[Observable[ModelType]]
-
-      override def channel: Observer[Action] = router.channel.asInstanceOf[Observer[Action]]
     }
   }
 }
