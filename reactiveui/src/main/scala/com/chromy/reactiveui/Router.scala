@@ -14,9 +14,9 @@ trait RouterMapper[B] {
 }
 
 trait Router[A] {
-  val changes: Observable[A]
-  val channel: Observer[Action]
-  val chain: UpdateChain[A]
+  def changes: Observable[A]
+  def channel: Observer[Action]
+  def chain: UpdateChain[A]
 
   def map[B](lens: Lens[A, B]): RouterMapper[B] = {
     val parent = this
@@ -39,8 +39,14 @@ trait Router[A] {
   def mapper: RouterMapper[A] = {
     val parent = this
     new RouterMapper[A] {
-      def apply(f: (Action, A) => A): Router[A] = parent
-      def apply(f: (Action, A, A) => A): Router[A] = parent
+      def apply(f: (Action, A) => A): Router[A] = {
+        parent.chain.subscribe(f)
+        parent
+      }
+      def apply(f: (Action, A, A) => A): Router[A] = {
+        parent.chain.subscribe(f)
+        parent
+      }
     }
   }
 }

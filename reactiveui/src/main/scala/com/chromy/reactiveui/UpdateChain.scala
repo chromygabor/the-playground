@@ -11,12 +11,10 @@ import scala.collection.mutable
 trait UpdateChain[T] {
 
   //STM should be used
-  private[this] val _subscribers: mutable.WeakHashMap[((Action, T, T) => T), Null] = mutable.WeakHashMap()
+  private[this] val _subscribers: mutable.WeakHashMap[((Action, T, T) => T), Int] = mutable.WeakHashMap()
 
   private[this] def subscribers: List[(Action, T, T) => T] = {
-    _subscribers.map { case (subscriber, _) =>
-      subscriber
-    }.toList
+    _subscribers.toList.sortBy(_._2).map {_._1}
   }
 
 
@@ -35,7 +33,7 @@ trait UpdateChain[T] {
   }
 
   def subscribe(subscriber: (Action, T, T) => T): Unit = {
-    _subscribers.update(subscriber, null)
+    _subscribers.update(subscriber, _subscribers.size)
   }
 
   def subscribe(subscriber: (Action, T) => T): Unit = {
@@ -65,3 +63,4 @@ trait UpdateChain[T] {
 object UpdateChain {
   def apply[T](): UpdateChain[T] = new UpdateChain[T] {}
 }
+
