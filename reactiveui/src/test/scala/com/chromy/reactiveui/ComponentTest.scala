@@ -1,6 +1,6 @@
 package com.chromy.reactiveui
 
-import com.chromy.reactiveui.myjavafx.{Uid, LocalAction, Action}
+import com.chromy.reactiveui.core._
 import monocle.macros.GenLens
 import org.scalatest.FunSpecLike
 import rx.lang.scala.Observer
@@ -10,13 +10,13 @@ import rx.lang.scala.Observer
  */
 class ComponentTest extends FunSpecLike {
 
-  case class AddNumber(uid: String = "", number: Int) extends Action
+  case class AddNumber(uid: Uid, number: Int) extends Action
 
-  case class MulNumber(uid: String = "", number: Int) extends LocalAction
+  case class MulNumber(uid: Uid, number: Int) extends LocalAction
 
-  case class MainModel(left: SubModel = SubModel(), right: SubModel = SubModel(), uid: String = Uid.nextUid().toString) extends Model[MainComponent]
+  case class MainModel(left: SubModel = SubModel(), right: SubModel = SubModel(), uid: Uid = Uid()) extends Model[MainComponent]
 
-  case class SubModel(value: Int = 0, uid: String = Uid.nextUid().toString) extends Model[SubComponent]
+  case class SubModel(value: Int = 0, uid: Uid = Uid()) extends Model[SubComponent]
 
   case object AddItem extends Action
 
@@ -43,7 +43,7 @@ class ComponentTest extends FunSpecLike {
     }
   }
 
-  case class ListModel(subs: List[SubModel] = Nil, uid: String = Uid.nextUid().toString) extends Model[ListComponent]
+  case class ListModel(subs: List[SubModel] = Nil, uid: Uid = Uid()) extends Model[ListComponent]
 
   class ListComponent(val routerMapper: RouterMapper[ListModel], val initialState: ListModel = ListModel()) extends BaseComponent[ListModel] {
     override def update: (Action, ListModel, Observer[Action]) => ListModel = { (action, model, channel) =>
@@ -68,7 +68,7 @@ class ComponentTest extends FunSpecLike {
     ignore("should update its state by an action") {
       new BaseTest {
         val comp = TestComponent[MainComponent](MainModel()) { (mapper, initialState) => new MainComponent(mapper, initialState) }
-        comp.router.channel.onNext(AddNumber("0", 10))
+        comp.router.channel.onNext(AddNumber(Uid(0), 10))
         assert(comp.state != None)
         assert(comp.state.get.left.value == 10)
         assert(comp.state.get.right.value == 0)
@@ -82,9 +82,9 @@ class ComponentTest extends FunSpecLike {
         comp.component.childrenComponents.left.prependToList("SubComponent.left")
         comp.component.childrenComponents.right.prependToList("SubComponent.right")
 
-        comp.router.channel.onNext(AddNumber("0", 5))
-        comp.component.childrenComponents.left.router.channel.onNext(MulNumber("0", 10))
-        comp.router.channel.onNext(AddNumber("1", 5))
+        comp.router.channel.onNext(AddNumber(Uid(0), 5))
+        comp.component.childrenComponents.left.router.channel.onNext(MulNumber(Uid(0), 10))
+        comp.router.channel.onNext(AddNumber(Uid(1), 5))
 
         println("**************************")
         println(list)
@@ -94,9 +94,9 @@ class ComponentTest extends FunSpecLike {
       new BaseTest {
         val comp = TestComponent[MainComponent](MainModel(SubModel(5), SubModel(5))) { (router, initialState) => new MainComponent(router, initialState) }
 
-        comp.component.childrenComponents.left.router.channel.onNext(MulNumber("0", 10))
+        comp.component.childrenComponents.left.router.channel.onNext(MulNumber(Uid(0), 10))
 
-        comp.router.channel.onNext(AddNumber("0", 5))
+        comp.router.channel.onNext(AddNumber(Uid(0), 5))
 
         assert(comp.component.childrenComponents.left.state != None)
         assert(comp.component.childrenComponents.left.state.get.value == 50)

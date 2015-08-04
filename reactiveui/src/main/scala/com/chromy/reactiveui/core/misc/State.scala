@@ -1,4 +1,4 @@
-package com.chromy.reactiveui.myjavafx
+package com.chromy.reactiveui.core.misc
 
 /**
  * Created by cry on 2015.05.20..

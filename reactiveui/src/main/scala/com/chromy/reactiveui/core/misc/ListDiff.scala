@@ -1,4 +1,4 @@
-package com.chromy.reactiveui
+package com.chromy.reactiveui.core.misc
 
 import scala.collection.immutable.ListMap
 

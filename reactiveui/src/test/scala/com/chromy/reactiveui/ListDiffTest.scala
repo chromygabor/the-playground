@@ -1,5 +1,6 @@
 package com.chromy.reactiveui
 
+import com.chromy.reactiveui.core.misc.ListDiff
 import org.scalatest.FunSpecLike
 
 import scala.collection.immutable.ListMap

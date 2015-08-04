@@ -1,6 +1,6 @@
 package com.chromy.reactiveui
 
-import com.chromy.reactiveui.myjavafx.{Action, LocalAction}
+import com.chromy.reactiveui.core.{Action, LocalAction, UpdateChain}
 import monocle.macros.GenLens
 import org.scalatest.FunSpecLike
 

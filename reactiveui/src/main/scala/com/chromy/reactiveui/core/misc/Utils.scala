@@ -1,7 +1,8 @@
-package com.chromy.reactiveui
+package com.chromy.reactiveui.core.misc
 
 import javafx.collections.ObservableList
 import javafx.event.{ActionEvent, EventHandler}
+
 import scala.collection.JavaConversions._
 
 

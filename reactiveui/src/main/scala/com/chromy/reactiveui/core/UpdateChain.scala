@@ -1,6 +1,5 @@
-package com.chromy.reactiveui
+package com.chromy.reactiveui.core
 
-import com.chromy.reactiveui.myjavafx.Action
 import monocle._
 
 import scala.collection.mutable

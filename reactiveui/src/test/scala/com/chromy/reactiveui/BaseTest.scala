@@ -1,8 +1,6 @@
 package com.chromy.reactiveui
 
-import com.chromy.reactiveui.myjavafx.{LocalAction, Action, Uid}
-import monocle.macros.GenLens
-import rx.lang.scala.Observer
+import com.chromy.reactiveui.core.{Component, Model}
 import rx.lang.scala.schedulers.ImmediateScheduler
 
 /**

@@ -1,4 +1,4 @@
-package com.chromy.reactiveui
+package com.chromy.reactiveui.core
 
 import com.chromy.reactiveui.myjavafx._
 import monocle.Lens
