@@ -1,5 +1,6 @@
 package com.chromy.reactiveui.myjavafx
-import com.chromy.reactiveui.core.Uid
+import com.chromy.reactiveui.core._
+import rx.lang.scala.Observer
 
 //
 //import javafx.fxml.FXML
@@ -18,7 +19,12 @@ import com.chromy.reactiveui.core.Uid
 //import scala.concurrent.Future
 //import scala.util.{Failure, Success, Try}
 //
-case class CounterModel(value: Int = 0, buttonEnabled: Boolean = true, uid: Uid = Uid())
+case class CounterModel(value: Int = 0, buttonEnabled: Boolean = true, uid: Uid = Uid()) extends Model[Counter]
+
+class Counter(protected val routerMapper: RouterMapper[CounterModel], protected val initialState: CounterModel)  extends BaseComponent[CounterModel] {
+  override def update: (Action, ModelType, Observer[Action]) => ModelType = ???
+
+}
 //
 //case class CounterDispatcher(parentFactory: DispatcherFactory[CounterModel, Action],
 //                             protected val channel: Observer[Action], changes: Observable[CounterModel],
