@@ -1,6 +1,5 @@
 package com.chromy.reactiveui.core
 
-import java.util.UUID
 
 import com.chromy.reactiveui.core.misc.ListDiff
 import rx.lang.scala.{Observable, Observer, Subject}
@@ -26,7 +25,7 @@ object ListComponentOf {
  */
 trait ListComponentOf[M <: Model[_ <: Component]] extends Component {
 
-  case class ListCompononentOfModel(routersToAdd: Map[String, (Int, ComponentType)], routersToRemove: Map[String, (Int, ComponentType)], uid: Uid = Uid()) extends Model[ListComponentOf[M]]
+  //case class ListCompononentOfModel(routersToAdd: Map[String, (Int, ComponentType)], routersToRemove: Map[String, (Int, ComponentType)], uid: Uid = Uid()) extends Model[ListComponentOf[M]]
 
   type ComponentType = Component {type ModelType = M}
   type ModelType = Operation[ComponentType]
@@ -35,7 +34,8 @@ trait ListComponentOf[M <: Model[_ <: Component]] extends Component {
 
   protected def create: Router[M] => ComponentType
 
-  private lazy val name = s"DSP-ListComponentOf}"
+
+  private lazy val name = s"ListComponentOf"
   println(s"[$name] created with")
 
   val stream = Subject[ModelType]
@@ -48,7 +48,6 @@ trait ListComponentOf[M <: Model[_ <: Component]] extends Component {
 
 
   val myRouter = {
-    println("myRouter created")
     routerMapper { (action, original, state) =>
       println(s"[$name] a new state was requested for $original and $action")
 
@@ -91,7 +90,6 @@ trait ListComponentOf[M <: Model[_ <: Component]] extends Component {
   }
 
   val router = {
-    println("router created")
     new Router[ModelType] {
       override def changes: Observable[ModelType] = stream.sample(myRouter.changes)
 

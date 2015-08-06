@@ -22,7 +22,7 @@ import rx.lang.scala.Observer
 case class CounterModel(value: Int = 0, buttonEnabled: Boolean = true, uid: Uid = Uid()) extends Model[Counter]
 
 class Counter(protected val routerMapper: RouterMapper[CounterModel], protected val initialState: CounterModel)  extends BaseComponent[CounterModel] {
-  override def update: (Action, ModelType, Observer[Action]) => ModelType = ???
+  override def update: (Action, ModelType, Observer[Action]) => ModelType = { (action, model, _) => model}
 
 }
 //

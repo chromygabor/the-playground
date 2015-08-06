@@ -5,10 +5,9 @@ import javafx.scene.control.Button
 import javafx.scene.layout.FlowPane
 
 import com.chromy.reactiveui.core._
-import com.msci.playground.StateMonadPlayground.Add
-import monocle.macros.GenLens
-import rx.lang.scala.{Subscriber, Observer}
 import com.chromy.reactiveui.core.misc.Utils._
+import monocle.macros.GenLens
+import rx.lang.scala.{Observer, Subscriber}
 
 
 case class CountersModel(counters: List[CounterModel] = List(), uid: Uid = Uid()) extends Model[Counters]
@@ -49,6 +48,7 @@ class Counters(protected val routerMapper: RouterMapper[CountersModel], protecte
 class CountersController extends GenericJavaFXModule[Counters] {
 
   @FXML private var _bAdd: Button = _
+  def bAdd = _bAdd
   @FXML private var _bRemove: Button = _
 
   @FXML private var _pCounters: FlowPane = _
@@ -57,7 +57,8 @@ class CountersController extends GenericJavaFXModule[Counters] {
 
   def subscriber(channel: Observer[Action]): Subscriber[CountersModel] = new Subscriber[CountersModel]() {
     override def onNext(model: CountersModel): Unit = {
-      _bAdd.setOnAction(() => channel.onNext(Add))
+      //println("render")
+      bAdd.setOnAction{() => channel.onNext(Add)}
       // pCounters.onNext(model.counters)
     }
 
@@ -70,12 +71,13 @@ class CountersController extends GenericJavaFXModule[Counters] {
     ???
   }
 
-  override def dispatch(routerMapper: RouterMapper[CountersModel], initialState: CountersModel): Unit = {
+  override def dispatch(routerMapper: RouterMapper[CountersModel], initialState: CountersModel): Counters = {
     _component = new Counters(routerMapper, initialState)
-    _component.router.changes.subscribe(subscriber(_component.router.channel))
+    _component.subscribe(subscriber(_component.channel))
 
     _component.childrenComponents.counters.router.changes.subscribe({ item =>
-      println("changed: item")
+      println(s"changed: $item")
     })
+    _component
   }
 }

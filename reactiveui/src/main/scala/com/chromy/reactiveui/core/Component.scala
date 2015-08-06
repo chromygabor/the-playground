@@ -2,8 +2,9 @@ package com.chromy.reactiveui.core
 
 import com.chromy.reactiveui.myjavafx._
 import rx.lang.scala.subjects.BehaviorSubject
-import rx.lang.scala.{Observer, Subject}
+import rx.lang.scala.{Subscriber, Observer, Subject}
 
+import scala.collection.mutable
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -37,7 +38,7 @@ trait BaseComponent[M <: Model[_ <: Component]] extends Component {
   private val _channel = Subject[Action]
   private lazy val _changes = BehaviorSubject[ModelType]
 
-  private lazy val name = s"DSP-${this.getClass.getSimpleName}(${initialState.uid})"
+  private lazy val name = s"${this.getClass.getSimpleName}(${initialState.uid})"
   println(s"[$name] created with $initialState")
 
   def subscriber: (Action, ModelType, ModelType) => ModelType = { (action, _, prevState) =>
@@ -71,7 +72,7 @@ trait BaseComponent[M <: Model[_ <: Component]] extends Component {
     _changes.onNext(change)
   }, { error => _changes.onError(error) }, { () => _changes.onCompleted() }
   )
-
+  //_channel.subscribe({action => println(action)})
   private val stream = _channel.scan((initialState, initialState, Nop.asInstanceOf[Action])) { case ((beforePrevState, prevState, prevAction), action) =>
     Try[ModelType] {
       action match {
@@ -121,6 +122,12 @@ trait BaseComponent[M <: Model[_ <: Component]] extends Component {
     }
   })
   _changes.onNext(initialState)
+  //_changes.subscribe({item => println(s"changes: $item")})
+
+  def subscribe(subscriber: Subscriber[ModelType]) = {
+    _changes.subscribe(subscriber)
+  }
+  val channel: Observer[Action] = _channel
 }
 
 
