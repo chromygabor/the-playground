@@ -20,7 +20,7 @@ class ComponentTest extends FunSpecLike {
 
   case object AddItem extends Action
 
-  class MainComponent(val routerMapper: RouterMapper[MainModel], val initialState: MainModel = MainModel()) extends BaseComponent[MainModel] {
+  class MainComponent(val routerMapper: RouterMapper[MainModel], val initialState: MainModel = MainModel()) extends Component[MainModel] {
     override def update: (Action, MainModel, Observer[Action]) => MainModel = { (action, model, channel) =>
       model
     }
@@ -33,7 +33,7 @@ class ComponentTest extends FunSpecLike {
     val childrenComponents = new ChildrenComponents
   }
 
-  class SubComponent(val routerMapper: RouterMapper[SubModel], val initialState: SubModel = SubModel()) extends BaseComponent[SubModel] {
+  class SubComponent(val routerMapper: RouterMapper[SubModel], val initialState: SubModel = SubModel()) extends Component[SubModel] {
     override def update: (Action, SubModel, Observer[Action]) => SubModel = { (action, model, channel) =>
       action match {
         case AddNumber(model.uid, toAdd) => model.copy(value = model.value + toAdd)
@@ -45,7 +45,7 @@ class ComponentTest extends FunSpecLike {
 
   case class ListModel(subs: List[SubModel] = Nil, uid: Uid = Uid()) extends Model[ListComponent]
 
-  class ListComponent(val routerMapper: RouterMapper[ListModel], val initialState: ListModel = ListModel()) extends BaseComponent[ListModel] {
+  class ListComponent(val routerMapper: RouterMapper[ListModel], val initialState: ListModel = ListModel()) extends Component[ListModel] {
     override def update: (Action, ListModel, Observer[Action]) => ListModel = { (action, model, channel) =>
       action match {
         case AddItem =>

@@ -1,6 +1,6 @@
 package com.chromy.reactiveui
 
-import com.chromy.reactiveui.core.{Component, Model}
+import com.chromy.reactiveui.core.{BaseModel, BaseComponent, Model}
 import rx.lang.scala.schedulers.ImmediateScheduler
 
 /**
@@ -10,9 +10,9 @@ trait BaseTest {
 
   implicit var list = List[Change[_]]()
 
-  case class Change[M <: Model[_ <: Component]](name: String, newModel: M)
+  case class Change[M <: BaseModel](name: String, newModel: M)
 
-  implicit class component2State[C <: Component](comp : C ) {
+  implicit class component2State[C <: BaseComponent](comp : C ) {
     def state: Option[C#ModelType] = {
       var state: C#ModelType = null.asInstanceOf[C#ModelType]
       val subscription = comp.router.changes.subscribeOn(ImmediateScheduler()).subscribe({lastState => state = lastState})

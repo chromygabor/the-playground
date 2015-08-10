@@ -34,24 +34,20 @@ sealed trait JavaFXModule {
   type Model
   type Component
 
-  def dispatch(routerMapper: RouterMapper[Model], initialState: Model): Component
+  def dispatch(component: Component): Component
 }
 
-trait GenericJavaFXModule[A <: Component] extends JavaFXModule {
-  type Controller = this.type
-  type Model = A#ModelType
-  type Component = A
-
-}
-
-
-object JavaFXFactory {
+object JavaFXModule {
+  import reflect.runtime.{currentMirror => mirror}
   import scala.reflect.runtime.universe._
-  import reflect.runtime.{currentMirror=>mirror}
 
-  def apply[M <: Component : Manifest](component: M): Unit = ???
+  def componentType[A <: JavaFXModule : Manifest]: Type = {
+    val m = typeOf[A].member("Component": TypeName)
+    val tpe = typeOf[A]
+    m.asType.toTypeIn(tpe)
+  }
 
-  def apply[M <: JavaFXModule : Manifest](routerMapper: RouterMapper[M#Model], initialState: M#Model): (Parent, M, M#Component) = {
+  def apply[M <: JavaFXModule : Manifest](component: M#Component): (Parent, M, M#Component) = {
     val ct = manifest[M]
 
     val clazzName = if (ct.runtimeClass.getSimpleName.endsWith("$")) ct.runtimeClass.getSimpleName.dropRight(1) else ct.runtimeClass.getSimpleName
@@ -59,13 +55,35 @@ object JavaFXFactory {
 
     val node: Parent = loader.load()
     val controller = loader.getController[M]
-    val component: M#Component = controller.dispatch(routerMapper.asInstanceOf[RouterMapper[controller.Model]], initialState.asInstanceOf[controller.Model])
+    controller.dispatch(component.asInstanceOf[controller.Component])
     (node, controller, component)
   }
 
-  trait ComponentFactory {
-    def apply(param: Int): Component
+  def apply[M <: JavaFXModule : Manifest](routerMapper: RouterMapper[M#Model], initialState: M#Model): (Parent, M, M#Component) = {
+    val ct = manifest[M]
+
+    val clazzName = if (ct.runtimeClass.getSimpleName.endsWith("$")) ct.runtimeClass.getSimpleName.dropRight(1) else ct.runtimeClass.getSimpleName
+    val loader = new FXMLLoader(getClass().getResource(s"$clazzName.fxml"))
+
+    val typeOfComponent = JavaFXModule.componentType[M]
+
+    val ctor = typeOfComponent.typeSymbol.asClass.primaryConstructor
+
+    val classMirror = mirror.reflectClass(typeOfComponent.typeSymbol.asClass)
+    val component = classMirror.reflectConstructor(ctor.asMethod).apply(routerMapper, initialState).asInstanceOf[M#Component]
+
+    val node: Parent = loader.load()
+    val controller = loader.getController[M]
+    controller.dispatch(component.asInstanceOf[controller.Component])
+    (node, controller, component)
   }
+
+}
+
+trait GenericJavaFXModule[A <: BaseComponent] extends JavaFXModule {
+  type Controller = this.type
+  type Model = A#ModelType
+  type Component = A
 
 }
 
@@ -111,7 +129,7 @@ object CounterApp extends App {
           })
         }
 
-        val (parent, appController, appComponent) = JavaFXFactory[CountersController](router.mapper, initialState)
+        val (parent, appController, appComponent) = JavaFXModule[CountersController](router.mapper, initialState)
 
         val stage = new Stage
         stage.setScene(new Scene(parent))

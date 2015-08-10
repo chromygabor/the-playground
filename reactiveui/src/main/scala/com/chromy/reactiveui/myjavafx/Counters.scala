@@ -15,7 +15,7 @@ case class CountersModel(counters: List[CounterModel] = List(), uid: Uid = Uid()
 case object Add extends Action
 
 
-class Counters(protected val routerMapper: RouterMapper[CountersModel], protected val initialState: CountersModel) extends BaseComponent[CountersModel] {
+class Counters(protected val routerMapper: RouterMapper[CountersModel], protected val initialState: CountersModel) extends Component[CountersModel] {
 
   //  def upd(action: Action, model: CountersModel, actionsChannel: Observer[Action]): CountersModel = {
   //    val newModel = action match {
@@ -68,9 +68,15 @@ class CountersController extends GenericJavaFXModule[Counters] {
 
   def listSubscriber = new Subscriber[Operation[Counter]] {
     override def onNext(change: Operation[Counter]): Unit = {
-      println(s"change: $change")
-      //val newCounterController
-      //pCounters.getChildren.add()
+      println(s"list change: $change")
+
+      change match {
+        case AddItem(component, index) =>
+          val (parent, controller, _) = JavaFXModule[CounterController](component)
+          println(s"adding $component")
+//          pCounters.getChildren.add(parent)
+      }
+
     }
 
     override def onError(error: Throwable): Unit = super.onError(error)
@@ -78,8 +84,8 @@ class CountersController extends GenericJavaFXModule[Counters] {
     override def onCompleted(): Unit = super.onCompleted()
   }
 
-  override def dispatch(routerMapper: RouterMapper[CountersModel], initialState: CountersModel): Counters = {
-    _component = new Counters(routerMapper, initialState)
+  override def dispatch(component: Counters): Counters = {
+    _component = component
     _component.subscribe(subscriber(_component.channel))
 
     _component.childrenComponents.counters.subscribe(listSubscriber)

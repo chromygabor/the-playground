@@ -11,18 +11,23 @@ import scala.util.{Failure, Success, Try}
  * Created by cry on 2015.07.11..
  */
 
-trait Component {
-  type ModelType <: Model[_ <: Component]
+trait BaseModel {
+  type Component <: BaseComponent
+
+  def uid: Uid
+}
+
+trait Model[C <: BaseComponent] extends BaseModel {
+  type Component = C
+}
+
+trait BaseComponent {
+  type ModelType <: BaseModel
 
   def router: Router[ModelType]
 }
 
-trait Model[C <: Component] {
-  type Component = C
-  def uid: Uid
-}
-
-trait BaseComponent[M <: Model[_ <: Component]] extends Component {
+trait Component[M <: BaseModel] extends BaseComponent {
   type ModelType = M
 
   protected def routerMapper: RouterMapper[ModelType]
@@ -131,6 +136,18 @@ trait BaseComponent[M <: Model[_ <: Component]] extends Component {
   val channel: Observer[Action] = _channel
 }
 
+object Component {
+  import reflect.runtime.{currentMirror => mirror}
+  import scala.reflect.runtime.universe._
+
+  implicit class ComponentUtil[A <: BaseComponent : Manifest](component: A) {
+    def modelType: Type = {
+      val m = typeOf[A].member("M": TypeName)
+      val tpe = typeOf[A]
+      m.asType.toTypeIn(tpe)
+    }
+  }
+}
 
 
 

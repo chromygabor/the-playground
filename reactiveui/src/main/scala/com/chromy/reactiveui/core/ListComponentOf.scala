@@ -8,7 +8,7 @@ import rx.lang.scala.{Subscriber, Observable, Observer, Subject}
  * Created by cry on 2015.08.04..
  */
 object ListComponentOf {
-  def apply[A <: Component](iRouterMapper: RouterMapper[List[A#ModelType]])(iCreate: (Router[A#ModelType], A#ModelType) => A): ListComponentOf[A] = {
+  def apply[A <: BaseComponent](iRouterMapper: RouterMapper[List[A#ModelType]])(iCreate: (Router[A#ModelType], A#ModelType) => A): ListComponentOf[A] = {
     val listComponentOf = new ListComponentOf[A] {
       override def routerMapper = iRouterMapper
 
@@ -22,7 +22,7 @@ object ListComponentOf {
  * ListComponentOf
  * @tparam A
  */
-trait ListComponentOf[A <: Component] extends Component {
+trait ListComponentOf[A <: BaseComponent] extends BaseComponent {
 
   type ComponentType = A
   type ComponentModel = ComponentType#ModelType

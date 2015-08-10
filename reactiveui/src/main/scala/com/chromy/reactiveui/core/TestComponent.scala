@@ -9,7 +9,7 @@ import scala.util.{Failure, Success, Try}
  * Created by cry on 2015.08.04..
  */
 
-trait RouterComponent[C <: Component] extends Component {
+trait RouterComponent[C <: BaseComponent] extends BaseComponent {
   override type ModelType = C#ModelType
 
   def router: Router[ModelType]
@@ -18,7 +18,7 @@ trait RouterComponent[C <: Component] extends Component {
 }
 
 object TestComponent {
-  def apply[C <: Component](initialState: C#ModelType)(f: (RouterMapper[C#ModelType], C#ModelType) => C): RouterComponent[C] = {
+  def apply[C <: BaseComponent](initialState: C#ModelType)(f: (RouterMapper[C#ModelType], C#ModelType) => C): RouterComponent[C] = {
     type M = C#ModelType
     new RouterComponent[C] {
       private lazy val name = s"DSP-RouterComponent"
