@@ -57,7 +57,7 @@ class ComponentTest extends FunSpecLike {
     }
 
     class ChildrenComponents {
-      val subs = ListComponentOf[SubModel](router.map(GenLens[ListModel](_.subs)))(router => new SubComponent(router.mapper))
+      //val subs = ListComponentOf[SubModel](router.map(GenLens[ListModel](_.subs)))(router => new SubComponent(router.mapper))
     }
 
     val childrenComponents = new ChildrenComponents
@@ -105,13 +105,13 @@ class ComponentTest extends FunSpecLike {
 
     it("should be able to handle lists") {
       new BaseTest {
-        val comp = TestComponent[ListComponent](ListModel()) { (mapper, initialState) => new ListComponent(mapper, initialState) }
-
-        comp.component.childrenComponents.subs.prependToList("ListComponent.subs")
-        //comp.component.childrenComponents.subs.childrenComponents(0)
-        comp.component.router.channel.onNext(AddItem)
-        comp.component.router.channel.onNext(AddItem)
-        println(list)
+//        val comp = TestComponent[ListComponent](ListModel()) { (mapper, initialState) => new ListComponent(mapper, initialState) }
+//
+//        comp.component.childrenComponents.subs.prependToList("ListComponent.subs")
+//        //comp.component.childrenComponents.subs.childrenComponents(0)
+//        comp.component.router.channel.onNext(AddItem)
+//        comp.component.router.channel.onNext(AddItem)
+//        println(list)
       }
     }
 
