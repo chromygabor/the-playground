@@ -24,6 +24,7 @@ case class CounterModel(value: Int = 0, buttonEnabled: Boolean = true, uid: Uid 
 class Counter(protected val routerMapper: RouterMapper[CounterModel], protected val initialState: CounterModel)  extends BaseComponent[CounterModel] {
   override def update: (Action, ModelType, Observer[Action]) => ModelType = { (action, model, _) => model}
 
+  override def toString = s"Counter(${initialState.uid})"
 }
 //
 //case class CounterDispatcher(parentFactory: DispatcherFactory[CounterModel, Action],
