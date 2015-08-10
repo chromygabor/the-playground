@@ -7,7 +7,7 @@ import javafx.scene.layout.FlowPane
 import com.chromy.reactiveui.core._
 import com.chromy.reactiveui.core.misc.Utils._
 import monocle.macros.GenLens
-import rx.lang.scala.{Observer, Subscriber}
+import rx.lang.scala.{Subscriber, Observer}
 
 
 case class CountersModel(counters: List[CounterModel] = List(), uid: Uid = Uid()) extends Model[Counters]
@@ -37,29 +37,28 @@ class Counters(protected val routerMapper: RouterMapper[CountersModel], protecte
   }
 
   class ChildrenComponents {
-    val counters = ListComponentOf[CounterModel](router.map(GenLens[CountersModel](_.counters)))(router => new Counter(router.mapper, CounterModel()))
+    val counters = ListComponentOf[Counter](router.map(GenLens[CountersModel](_.counters)))((router, state) => new Counter(router.mapper, state))
   }
 
   val childrenComponents = new ChildrenComponents
-
 }
 
 
 class CountersController extends GenericJavaFXModule[Counters] {
 
   @FXML private var _bAdd: Button = _
-  def bAdd = _bAdd
+  lazy val bAdd = _bAdd
+
   @FXML private var _bRemove: Button = _
 
   @FXML private var _pCounters: FlowPane = _
+  lazy val pCounters = _pCounters
 
   private var _component: Counters = _
 
   def subscriber(channel: Observer[Action]): Subscriber[CountersModel] = new Subscriber[CountersModel]() {
     override def onNext(model: CountersModel): Unit = {
-      //println("render")
       bAdd.setOnAction{() => channel.onNext(Add)}
-      // pCounters.onNext(model.counters)
     }
 
     override def onError(error: Throwable): Unit = super.onError(error)
@@ -67,17 +66,23 @@ class CountersController extends GenericJavaFXModule[Counters] {
     override def onCompleted(): Unit = super.onCompleted()
   }
 
-  def listSubscriber(channel: Observer[Action]): Subscriber[Operation[CounterModel]] = {
-    ???
+  def listSubscriber = new Subscriber[Operation[Counter]] {
+    override def onNext(change: Operation[Counter]): Unit = {
+      println(s"change: $change")
+      //val newCounterController
+      //pCounters.getChildren.add()
+    }
+
+    override def onError(error: Throwable): Unit = super.onError(error)
+
+    override def onCompleted(): Unit = super.onCompleted()
   }
 
   override def dispatch(routerMapper: RouterMapper[CountersModel], initialState: CountersModel): Counters = {
     _component = new Counters(routerMapper, initialState)
     _component.subscribe(subscriber(_component.channel))
 
-    _component.childrenComponents.counters.router.changes.subscribe({ item =>
-      println(s"changed: $item")
-    })
+    _component.childrenComponents.counters.subscribe(listSubscriber)
     _component
   }
 }
