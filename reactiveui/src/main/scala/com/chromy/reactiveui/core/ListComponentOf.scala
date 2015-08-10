@@ -2,18 +2,17 @@ package com.chromy.reactiveui.core
 
 
 import com.chromy.reactiveui.core.misc.ListDiff
-import rx.lang.scala.{Observable, Observer, Subject}
+import rx.lang.scala.{Subscriber, Observable, Observer, Subject}
 
 /**
  * Created by cry on 2015.08.04..
  */
 object ListComponentOf {
-  def apply[M <: Model[_ <: Component]](iRouterMapper: RouterMapper[List[M]])(iCreate: (Router[M] => Component {type ModelType = M})): ListComponentOf[M] = {
-    val listComponentOf = new ListComponentOf[M] {
+  def apply[A <: Component](iRouterMapper: RouterMapper[List[A#ModelType]])(iCreate: (Router[A#ModelType], A#ModelType) => A): ListComponentOf[A] = {
+    val listComponentOf = new ListComponentOf[A] {
       override def routerMapper = iRouterMapper
 
-      override def create: (Router[M]) => Component {type ModelType = M} = iCreate
-
+      override def create: (Router[A#ModelType], A#ModelType) => A = iCreate
     }
     listComponentOf
   }
@@ -21,18 +20,17 @@ object ListComponentOf {
 
 /**
  * ListComponentOf
- * @tparam M
+ * @tparam A
  */
-trait ListComponentOf[M <: Model[_ <: Component]] extends Component {
+trait ListComponentOf[A <: Component] extends Component {
 
-  //case class ListCompononentOfModel(routersToAdd: Map[String, (Int, ComponentType)], routersToRemove: Map[String, (Int, ComponentType)], uid: Uid = Uid()) extends Model[ListComponentOf[M]]
-
-  type ComponentType = Component {type ModelType = M}
+  type ComponentType = A
+  type ComponentModel = ComponentType#ModelType
   type ModelType = Operation[ComponentType]
 
-  protected def routerMapper: RouterMapper[List[M]]
+  protected def routerMapper: RouterMapper[List[ComponentModel]]
 
-  protected def create: Router[M] => ComponentType
+  protected def create: (Router[ComponentModel], ComponentModel) => ComponentType
 
 
   private lazy val name = s"ListComponentOf"
@@ -47,15 +45,14 @@ trait ListComponentOf[M <: Model[_ <: Component]] extends Component {
   def childrenComponents_=(newComponents: Map[Uid, ComponentType]) = _components = newComponents
 
 
-  val myRouter = {
-    routerMapper { (action, original, state) =>
+  val myRouter = routerMapper { (action, original, state) =>
       println(s"[$name] a new state was requested for $original and $action")
 
       val (toDelete, toInsert) = ListDiff.diff(original, state) {
         _.uid.uid.toString
       }
 
-      toDelete.foldLeft((0, List[(M, Int)]())) { case ((removedItems, list), (item, index)) =>
+      val l = toDelete.foldLeft((0, List[(ComponentModel, Int)]())) { case ((removedItems, list), (item, index)) =>
         val newItem = item -> (index - removedItems)
         (removedItems + 1, newItem :: list)
       }._2.foreach { case (item, index) =>
@@ -72,21 +69,22 @@ trait ListComponentOf[M <: Model[_ <: Component]] extends Component {
 
       state.map { in =>
         childrenComponents.get(in.uid) match {
-          case Some(component) => component.router.chain.update(action, in)
+          case Some(component) => component.router.chain.update(action, in.asInstanceOf[component.ModelType])
           case _ => in
         }
       }
     }
-  }
+
+
 
   private val myChanges = myRouter.changes.map(_.map { in => in.uid -> in }.toMap)
 
-  def createComponent(item: M): ComponentType = {
-    create(new Router[M] {
-      override val changes: Observable[M] = myChanges.map { change => change(item.uid) }
-      override val chain: UpdateChain[M] = UpdateChain[M]
+  def createComponent(item: ComponentModel): ComponentType = {
+    create(new Router[ComponentModel] {
+      override val changes: Observable[ComponentModel] = myChanges.map { change => change(item.uid) }
+      override val chain: UpdateChain[ComponentModel] = UpdateChain[ComponentModel]
       override val channel: Observer[Action] = myRouter.channel
-    })
+    }, item)
   }
 
   val router = {
@@ -99,6 +97,10 @@ trait ListComponentOf[M <: Model[_ <: Component]] extends Component {
 
       override def channel: Observer[Action] = myRouter.channel
     }
+  }
+
+  def subscribe(subscriber: Subscriber[Operation[ComponentType]]) = {
+    stream.subscribe(subscriber)
   }
 }
 
