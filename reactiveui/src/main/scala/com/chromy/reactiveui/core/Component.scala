@@ -18,6 +18,7 @@ trait Component {
 }
 
 trait Model[C <: Component] {
+  type Component = C
   def uid: Uid
 }
 
