@@ -44,9 +44,14 @@ trait GenericJavaFXModule[A <: Component] extends JavaFXModule {
 
 }
 
-object JavaFXFactory {
-  def apply[M <: JavaFXModule : Manifest](routerMapper: RouterMapper[M#Model], initialState: M#Model): (Parent, M, M#Component) = {
 
+object JavaFXFactory {
+  import scala.reflect.runtime.universe._
+  import reflect.runtime.{currentMirror=>mirror}
+
+  def apply[M <: Component : Manifest](component: M): Unit = ???
+
+  def apply[M <: JavaFXModule : Manifest](routerMapper: RouterMapper[M#Model], initialState: M#Model): (Parent, M, M#Component) = {
     val ct = manifest[M]
 
     val clazzName = if (ct.runtimeClass.getSimpleName.endsWith("$")) ct.runtimeClass.getSimpleName.dropRight(1) else ct.runtimeClass.getSimpleName
@@ -57,6 +62,11 @@ object JavaFXFactory {
     val component: M#Component = controller.dispatch(routerMapper.asInstanceOf[RouterMapper[controller.Model]], initialState.asInstanceOf[controller.Model])
     (node, controller, component)
   }
+
+  trait ComponentFactory {
+    def apply(param: Int): Component
+  }
+
 }
 
 
@@ -107,8 +117,6 @@ object CounterApp extends App {
         stage.setScene(new Scene(parent))
         stage.setTitle("CounterPair App")
         stage.show()
-
-        //appComponent.router.changes
     }
 
 
