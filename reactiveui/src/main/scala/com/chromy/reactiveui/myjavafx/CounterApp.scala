@@ -12,7 +12,8 @@ import rx.lang.scala.subjects.BehaviorSubject
 import rx.lang.scala.{Scheduler => ScalaScheduler, Subject}
 import rx.schedulers.Schedulers
 
-import scala.util.{Failure, Success, Try}
+import scala.util.{Try, Failure, Success}
+
 
 /**
  * Created by chrogab on 2015.06.04..
@@ -38,44 +39,53 @@ sealed trait JavaFXModule {
 }
 
 object JavaFXModule {
-  import reflect.runtime.{currentMirror => mirror}
-  import scala.reflect.runtime.universe._
 
-  def componentType[A <: JavaFXModule : Manifest]: Type = {
+
+  def componentType[A <: JavaFXModule : Manifest]: reflect.runtime.universe.Type = {
+    import reflect.runtime.{currentMirror => mirror}
+    import scala.reflect.runtime.universe._
+
     val m = typeOf[A].member("Component": TypeName)
     val tpe = typeOf[A]
     m.asType.toTypeIn(tpe)
   }
 
-  def apply[M <: JavaFXModule : Manifest](component: M#Component): (Parent, M, M#Component) = {
+  def apply[M <: JavaFXModule : Manifest](component: M#Component): Try[(Parent, M, M#Component)] = {
     val ct = manifest[M]
 
-    val clazzName = if (ct.runtimeClass.getSimpleName.endsWith("$")) ct.runtimeClass.getSimpleName.dropRight(1) else ct.runtimeClass.getSimpleName
-    val loader = new FXMLLoader(getClass().getResource(s"$clazzName.fxml"))
+    Try {
+      val clazzName = if (ct.runtimeClass.getSimpleName.endsWith("$")) ct.runtimeClass.getSimpleName.dropRight(1) else ct.runtimeClass.getSimpleName
+      val loader = new FXMLLoader(ct.runtimeClass.getResource(s"$clazzName.fxml"))
 
-    val node: Parent = loader.load()
-    val controller = loader.getController[M]
-    controller.dispatch(component.asInstanceOf[controller.Component])
-    (node, controller, component)
+      val node: Parent = loader.load()
+      val controller = loader.getController[M]
+      controller.dispatch(component.asInstanceOf[controller.Component])
+      (node, controller, component)
+    }
   }
 
-  def apply[M <: JavaFXModule : Manifest](routerMapper: RouterMapper[M#Model], initialState: M#Model): (Parent, M, M#Component) = {
+  def apply[M <: JavaFXModule : Manifest](routerMapper: RouterMapper[M#Model], initialState: M#Model): Try[(Parent, M, M#Component)] = {
+    import reflect.runtime.{currentMirror => mirror}
+    import scala.reflect.runtime.universe._
+
     val ct = manifest[M]
 
-    val clazzName = if (ct.runtimeClass.getSimpleName.endsWith("$")) ct.runtimeClass.getSimpleName.dropRight(1) else ct.runtimeClass.getSimpleName
-    val loader = new FXMLLoader(getClass().getResource(s"$clazzName.fxml"))
+    scala.util.Try {
+      val clazzName = if (ct.runtimeClass.getSimpleName.endsWith("$")) ct.runtimeClass.getSimpleName.dropRight(1) else ct.runtimeClass.getSimpleName
+      val loader = new FXMLLoader(ct.runtimeClass.getResource(s"$clazzName.fxml"))
 
-    val typeOfComponent = JavaFXModule.componentType[M]
+      val typeOfComponent = JavaFXModule.componentType[M]
 
-    val ctor = typeOfComponent.typeSymbol.asClass.primaryConstructor
+      val ctor = typeOfComponent.typeSymbol.asClass.primaryConstructor
 
-    val classMirror = mirror.reflectClass(typeOfComponent.typeSymbol.asClass)
-    val component = classMirror.reflectConstructor(ctor.asMethod).apply(routerMapper, initialState).asInstanceOf[M#Component]
+      val classMirror = mirror.reflectClass(typeOfComponent.typeSymbol.asClass)
+      val component = classMirror.reflectConstructor(ctor.asMethod).apply(routerMapper, initialState).asInstanceOf[M#Component]
 
-    val node: Parent = loader.load()
-    val controller = loader.getController[M]
-    controller.dispatch(component.asInstanceOf[controller.Component])
-    (node, controller, component)
+      val node: Parent = loader.load()
+      val controller = loader.getController[M]
+      controller.dispatch(component.asInstanceOf[controller.Component])
+      (node, controller, component)
+    }
   }
 
 }
@@ -90,6 +100,8 @@ trait GenericJavaFXModule[A <: BaseComponent] extends JavaFXModule {
 
 object CounterApp extends App {
 
+  import scala.util.{Try, Success, Failure}
+
   type C = Counters
   type M = CountersModel
 
@@ -101,40 +113,44 @@ object CounterApp extends App {
   Platform.runLater(new Runnable() {
     override def run(): Unit = {
 
-        lazy val name = s"DSP-MainComponent"
-        println(s"[$name] created ")
+      lazy val name = s"DSP-MainComponent"
+      println(s"[$name] created ")
 
-        val router = new Router[M] {
-          override val changes = BehaviorSubject[M]
-          override val chain: UpdateChain[M] = UpdateChain()
-          override val channel = Subject[Action]
+      val router = new Router[M] {
+        override val changes = BehaviorSubject[M]
+        override val chain: UpdateChain[M] = UpdateChain()
+        override val channel = Subject[Action]
 
-          val stream = channel.scan(initialState) { (oldState, action) =>
-            Try {
-              println(s"=================== [$name] action received  $action =================")
-              val newState = chain.update(action, oldState)
-              println(s"[$name] - An action received in the main loop: $action -- $oldState => $newState")
-              newState
-            } match {
-              case Success(newState) => newState
-              case Failure(error) =>
-                error.printStackTrace()
-                oldState
-            }
+        val stream = channel.scan(initialState) { (oldState, action) =>
+          Try {
+            println(s"=================== [$name] action received  $action =================")
+            val newState = chain.update(action, oldState)
+            println(s"[$name] - An action received in the main loop: $action -- $oldState => $newState")
+            newState
+          } match {
+            case Success(newState) => newState
+            case Failure(error) =>
+              error.printStackTrace()
+              oldState
           }
-
-          stream.drop(1) subscribe ({ newState =>
-            println(s"[$name] - A publishing a change: $newState")
-            changes.onNext(newState)
-          })
         }
 
-        val (parent, appController, appComponent) = JavaFXModule[CountersController](router.mapper, initialState)
+        stream.drop(1) subscribe ({ newState =>
+          println(s"[$name] - A publishing a change: $newState")
+          changes.onNext(newState)
+        })
+      }
 
-        val stage = new Stage
-        stage.setScene(new Scene(parent))
-        stage.setTitle("CounterPair App")
-        stage.show()
+      JavaFXModule[CountersController](router.mapper, initialState) match {
+        case Success((parent, appController, appComponent)) => (parent, appController, appComponent)
+          val stage = new Stage
+          stage.setScene(new Scene(parent))
+          stage.setTitle("CounterPair App")
+          stage.show()
+        case Failure(e) =>
+          e.printStackTrace()
+      }
+
     }
 
 
