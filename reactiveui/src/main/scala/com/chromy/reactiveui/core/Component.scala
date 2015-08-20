@@ -13,7 +13,6 @@ import scala.util.{Failure, Success, Try}
 
 trait BaseModel {
   type Component <: BaseComponent
-
   def uid: Uid
 }
 
@@ -22,7 +21,7 @@ trait Model[C <: BaseComponent] extends BaseModel {
 }
 
 trait BaseComponent {
-  type ModelType <: BaseModel
+  type ModelType
 
   def router: Router[ModelType]
 }
@@ -42,14 +41,16 @@ trait Component[M <: BaseModel] extends BaseComponent {
   case class Step(action: Action, state: ModelType) extends Action
 
   private val _channel = Subject[Action]
-  private lazy val _changes = BehaviorSubject[ModelType]
+  private lazy val _changes = BehaviorSubject[ModelType](initialState)
 
-  private lazy val name = s"${this.getClass.getSimpleName}(${initialState.uid})"
+  protected lazy val name = s"${this.getClass.getSimpleName}(${initialState.uid})"
   println(s"[$name] created with $initialState")
 
-  def subscriber: (Action, ModelType, ModelType) => ModelType = { (action, _, prevState) =>
-    println(s"[$name] a new state was requested for $prevState and $action")
+  lazy val router = routerMapper(subscriber)
 
+  private def subscriber: (Action, ModelType, ModelType) => ModelType = { (action, _, prevState) =>
+    println(s"[$name] a new state was requested for $prevState and $action")
+//    update(action, prevState, router.channel)
     action match {
       case ActualState(_, actualState) if (actualState.uid == initialState.uid) =>
         println(s"[$name] action is ActualState so we just unwrap it => $actualState")
@@ -70,15 +71,12 @@ trait Component[M <: BaseModel] extends BaseComponent {
     }
   }
 
-  val router = routerMapper(subscriber)
-
-  router.changes.distinctUntilChanged.subscribe(
+  router.changes.subscribe(
   { change =>
     println(s"[$name] new change from parent: $change")
     _changes.onNext(change)
   }, { error => _changes.onError(error) }, { () => _changes.onCompleted() }
   )
-  //_channel.subscribe({action => println(action)})
   private val stream = _channel.scan((initialState, initialState, Nop.asInstanceOf[Action])) { case ((beforePrevState, prevState, prevAction), action) =>
     Try[ModelType] {
       action match {
@@ -127,13 +125,11 @@ trait Component[M <: BaseModel] extends BaseComponent {
         }
     }
   })
-  _changes.onNext(initialState)
-  //_changes.subscribe({item => println(s"changes: $item")})
 
   def subscribe(subscriber: Subscriber[ModelType]) = {
     _changes.subscribe(subscriber)
   }
-  val channel: Observer[Action] = _channel
+  val channel: Observer[Action] = router.channel
 }
 
 object Component {
@@ -148,9 +144,3 @@ object Component {
     }
   }
 }
-
-
-
-
-
-
