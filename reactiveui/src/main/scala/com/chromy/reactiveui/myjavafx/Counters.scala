@@ -7,7 +7,9 @@ import javafx.scene.layout.FlowPane
 import com.chromy.reactiveui.core._
 import com.chromy.reactiveui.core.misc.Utils._
 import monocle.macros.GenLens
-import rx.lang.scala.{Subscriber, Observer}
+import rx.lang.scala.{Observer, Subscriber}
+
+import scala.util.{Failure, Success}
 
 
 case class CountersModel(counters: List[CounterModel] = List(), uid: Uid = Uid()) extends Model[Counters]
@@ -17,21 +19,12 @@ case object Add extends Action
 
 class Counters(protected val routerMapper: RouterMapper[CountersModel], protected val initialState: CountersModel) extends Component[CountersModel] {
 
-  //  def upd(action: Action, model: CountersModel, actionsChannel: Observer[Action]): CountersModel = {
-  //    val newModel = action match {
-  //      case Add =>
-  //        model.copy(counters = CounterModel() :: model.counters)
-  //      case Counter.Close(uid) =>
-  //        val splitted = model.counters.splitAt(model.counters.indexWhere(_.uid == uid))
-  //        model.copy(counters = splitted._1 ::: splitted._2.tail)
-  //      case _ => model
-  //    }
-  //    newModel
-  //  }
-
   override def update: (Action, CountersModel, Observer[Action]) => CountersModel = { (action, model, channel) =>
     action match {
       case Add => model.copy(counters = CounterModel() :: model.counters)
+      case Close(uid) =>
+        val newCounters = model.counters.filter{ _.uid != uid}
+        model.copy(counters = newCounters)
       case _ => model
     }
   }
@@ -58,7 +51,7 @@ class CountersController extends GenericJavaFXModule[Counters] {
 
   def subscriber(channel: Observer[Action]): Subscriber[CountersModel] = new Subscriber[CountersModel]() {
     override def onNext(model: CountersModel): Unit = {
-      bAdd.setOnAction{() => channel.onNext(Add)}
+      bAdd.setOnAction { () => channel.onNext(Add) }
     }
 
     override def onError(error: Throwable): Unit = super.onError(error)
@@ -66,17 +59,19 @@ class CountersController extends GenericJavaFXModule[Counters] {
     override def onCompleted(): Unit = super.onCompleted()
   }
 
-  def listSubscriber = new Subscriber[Operation[Counter]] {
-    override def onNext(change: Operation[Counter]): Unit = {
-      println(s"list change: $change")
-
-      change match {
+  def listSubscriber = new Subscriber[List[Operation[Counter]]] {
+    override def onNext(changes: List[Operation[Counter]]): Unit = {
+      changes.foreach {
         case AddItem(component, index) =>
-          val (parent, controller, _) = JavaFXModule[CounterController](component)
-          println(s"adding $component")
-//          pCounters.getChildren.add(parent)
+          JavaFXModule[CounterController](component) match {
+            case Success((parent, controller, _)) =>
+              pCounters.getChildren.add(index, parent)
+            case Failure(e) =>
+              e.printStackTrace()
+          }
+        case DeleteItem(component, index) =>
+          pCounters.getChildren.remove(index)
       }
-
     }
 
     override def onError(error: Throwable): Unit = super.onError(error)
