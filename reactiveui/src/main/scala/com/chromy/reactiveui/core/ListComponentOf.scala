@@ -7,8 +7,11 @@ import rx.lang.scala.{Subscriber, Observable, Observer, Subject}
 /**
  * Created by cry on 2015.08.04..
  */
+
+case class Changes[A](deleteItems: List[A], insertItems: List[A], uid: Uid = Uid()) extends BaseModel
+
 object ListComponentOf {
-  def apply[A <: BaseComponent](iRouterMapper: RouterMapper[List[A#ModelType]])(iCreate: (Router[A#ModelType], A#ModelType) => A): ListComponentOf[A] = {
+  def apply[A <: BaseComponent{type ModelType <: BaseModel}](iRouterMapper: RouterMapper[List[A#ModelType]])(iCreate: (Router[A#ModelType], A#ModelType) => A): ListComponentOf[A] = {
     val listComponentOf = new ListComponentOf[A] {
       override def routerMapper = iRouterMapper
 
@@ -22,11 +25,11 @@ object ListComponentOf {
  * ListComponentOf
  * @tparam A
  */
-trait ListComponentOf[A <: BaseComponent] extends BaseComponent {
+trait ListComponentOf[A <: BaseComponent {type ModelType <: BaseModel}] extends BaseComponent {
 
   type ComponentType = A
   type ComponentModel = ComponentType#ModelType
-  type ModelType = Operation[ComponentType]
+  type ModelType = List[Operation[ComponentType]]
 
   protected def routerMapper: RouterMapper[List[ComponentModel]]
 
@@ -46,42 +49,51 @@ trait ListComponentOf[A <: BaseComponent] extends BaseComponent {
 
 
   val myRouter = routerMapper { (action, original, state) =>
-      println(s"[$name] a new state was requested for $original and $action")
+    println(s"[$name] a new state was requested for $original and $action")
 
-      val (toDelete, toInsert) = ListDiff.diff(original, state) {
-        _.uid.uid.toString
-      }
-
-      val l = toDelete.foldLeft((0, List[(ComponentModel, Int)]())) { case ((removedItems, list), (item, index)) =>
-        val newItem = item -> (index - removedItems)
-        (removedItems + 1, newItem :: list)
-      }._2.foreach { case (item, index) =>
-        val component = childrenComponents(item.uid)
-        childrenComponents = childrenComponents - item.uid
-        stream.onNext(DeleteItem(component, index))
-      }
-
-      toInsert.foreach { case (item, index) =>
-        val component = createComponent(item)
-        childrenComponents = childrenComponents + (item.uid -> component)
-        stream.onNext(AddItem(component, index))
-      }
-
-      state.map { in =>
-        childrenComponents.get(in.uid) match {
-          case Some(component) => component.router.chain.update(action, in.asInstanceOf[component.ModelType])
-          case _ => in
-        }
-      }
+    val (toDelete, toInsert) = ListDiff.diff(original, state) {
+      _.uid.uid.toString
     }
 
+    val deleteItems = toDelete.foldLeft((0, List[(ComponentModel, Int)]())) { case ((removedItems, list), (item, index)) =>
+      val newItem = item -> (index - removedItems)
+      (removedItems + 1, newItem :: list)
+    }._2.map { case (item, index) =>
+      val component = childrenComponents(item.uid)
+      toInsert.find { case (model, _) => model.uid == item.uid} match {
+        case Some(_) =>
+        case None =>
+          childrenComponents = childrenComponents - item.uid
+      }
+      DeleteItem(component, index)
+    }
+
+    val insertItems = toInsert.map { case (item, index) =>
+
+      val component = childrenComponents.getOrElse(item.uid, {
+        println(s"[$name] creating component with: $item")
+        createComponent(item)
+      })
+      childrenComponents = childrenComponents + (item.uid -> component)
+      AddItem(component, index)
+    }.toList
+
+    stream.onNext(deleteItems ++ insertItems)
+
+    state.map { in =>
+      childrenComponents.get(in.uid) match {
+        case Some(component) => component.router.chain.update(action, in.asInstanceOf[component.ModelType])
+        case _ => in
+      }
+    }
+  }
 
 
   private val myChanges = myRouter.changes.map(_.map { in => in.uid -> in }.toMap)
 
   def createComponent(item: ComponentModel): ComponentType = {
     create(new Router[ComponentModel] {
-      override val changes: Observable[ComponentModel] = myChanges.map { change => change(item.uid) }
+      override val changes: Observable[ComponentModel] = myChanges.filter {_.contains(item.uid)} map { change => change(item.uid)}
       override val chain: UpdateChain[ComponentModel] = UpdateChain[ComponentModel]
       override val channel: Observer[Action] = myRouter.channel
     }, item)
@@ -99,8 +111,8 @@ trait ListComponentOf[A <: BaseComponent] extends BaseComponent {
     }
   }
 
-  def subscribe(subscriber: Subscriber[Operation[ComponentType]]) = {
-    stream.subscribe(subscriber)
+  def subscribe(subscriber: Subscriber[List[Operation[ComponentType]]]) = {
+    router.changes.subscribe(subscriber)
   }
 }
 
