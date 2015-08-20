@@ -12,10 +12,10 @@ trait BaseTest {
 
   case class Change[M <: BaseModel](name: String, newModel: M)
 
-  implicit class component2State[C <: BaseComponent](comp : C ) {
+  implicit class component2State[C <: BaseComponent{type ModelType <: BaseModel}](comp : C ) {
     def state: Option[C#ModelType] = {
       var state: C#ModelType = null.asInstanceOf[C#ModelType]
-      val subscription = comp.router.changes.subscribeOn(ImmediateScheduler()).subscribe({lastState => state = lastState})
+      val subscription = comp.router.changes.subscribeOn(ImmediateScheduler()).subscribe({lastState => state = lastState.asInstanceOf[C#ModelType]})
       subscription.unsubscribe()
       state match {
         case null => None
