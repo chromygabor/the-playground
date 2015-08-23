@@ -4,7 +4,7 @@
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
 
-<FlowPane hgap="10.0" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.chromy.reactiveui.myjavafx.Counter">
+<FlowPane hgap="10.0" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.chromy.reactiveui.myjavafx.CounterController">
     <children>
         <Button fx:id="_btnDecrement" mnemonicParsing="false" text="Decrement" />
         <Label fx:id="_lblCounter" text="" />

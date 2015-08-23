@@ -1,6 +1,5 @@
 package com.chromy.reactiveui.core
 
-import com.chromy.reactiveui.myjavafx._
 import monocle.Lens
 import rx.lang.scala.{Observable, Observer}
 

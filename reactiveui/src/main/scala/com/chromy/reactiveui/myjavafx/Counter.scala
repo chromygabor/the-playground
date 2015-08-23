@@ -42,6 +42,7 @@ class CounterController extends GenericJavaFXModule[Counter] {
   lazy val btnIncrement = _btnIncrement
   lazy val btnDecrement = _btnDecrement
   lazy val btnClose = _btnClose
+  private[this] var _component: Counter = _
 
   def subscriber(channel: Observer[Action]): Subscriber[CounterModel] = new Subscriber[CounterModel]() {
     override def onNext(model: CounterModel): Unit = {
@@ -64,7 +65,8 @@ class CounterController extends GenericJavaFXModule[Counter] {
   }
 
   override def dispatch(component: Counter): Counter = {
-    component.subscribe(subscriber(component.channel))
-    component
+    _component = component
+    _component.subscribe(subscriber(component.channel))
+    _component
   }
 }

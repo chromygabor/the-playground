@@ -1,19 +1,27 @@
 package com.chromy.reactiveui.core
 
+import java.util.concurrent.atomic.AtomicReference
+
 import monocle._
 
-import scala.collection.mutable
+import scala.collection.mutable.{HashMap => MMap}
 
 /**
  * Created by cry on 2015.07.04..
  */
 trait UpdateChain[T] {
 
-  //STM should be used
-  private[this] val _subscribers: mutable.WeakHashMap[((Action, T, T) => T), Int] = mutable.WeakHashMap()
+  private[this] val _subscribersLock: Object = new Object()
+  private[this] val _subscribers: MMap[((Action, T, T) => T), Int] = MMap()
 
   private[this] def subscribers: List[(Action, T, T) => T] = {
-    _subscribers.toList.sortBy(_._2).map {_._1}
+    var newSubscribers:List[((Action, T, T) => T)]  = null
+    _subscribersLock.synchronized {
+      newSubscribers = _subscribers.toList.sortBy(_._2).map {
+        _._1
+      }
+    }
+    newSubscribers
   }
 
 
@@ -32,7 +40,9 @@ trait UpdateChain[T] {
   }
 
   def subscribe(subscriber: (Action, T, T) => T): Unit = {
-    _subscribers.update(subscriber, _subscribers.size)
+    _subscribersLock.synchronized {
+      _subscribers.update(subscriber, _subscribers.size)
+    }
   }
 
   def subscribe(subscriber: (Action, T) => T): Unit = {

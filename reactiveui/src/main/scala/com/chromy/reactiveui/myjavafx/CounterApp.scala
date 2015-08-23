@@ -38,8 +38,9 @@ sealed trait JavaFXModule {
   def dispatch(component: Component): Component
 }
 
-object JavaFXModule {
+case class JavaFxModuleWrapper[A <: JavaFXModule](parent: Parent, controller: A, component: A#Component)
 
+object JavaFXModule {
 
   def componentType[A <: JavaFXModule : Manifest]: reflect.runtime.universe.Type = {
     import reflect.runtime.{currentMirror => mirror}
@@ -109,6 +110,7 @@ object CounterApp extends App {
 
   val fxPanel = new JFXPanel()
 
+  var _component: C = _
 
   Platform.runLater(new Runnable() {
     override def run(): Unit = {
@@ -142,7 +144,8 @@ object CounterApp extends App {
       }
 
       JavaFXModule[CountersController](router.mapper, initialState) match {
-        case Success((parent, appController, appComponent)) => (parent, appController, appComponent)
+        case Success((parent, appController, appComponent)) =>
+          _component = appComponent
           val stage = new Stage
           stage.setScene(new Scene(parent))
           stage.setTitle("CounterPair App")

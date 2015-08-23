@@ -46,8 +46,6 @@ trait Component[M <: BaseModel] extends BaseComponent {
   protected lazy val name = s"${this.getClass.getSimpleName}(${initialState.uid})"
   println(s"[$name] created with $initialState")
 
-  lazy val router = routerMapper(subscriber)
-
   private def subscriber: (Action, ModelType, ModelType) => ModelType = { (action, _, prevState) =>
     println(s"[$name] a new state was requested for $prevState and $action")
 //    update(action, prevState, router.channel)
@@ -70,6 +68,8 @@ trait Component[M <: BaseModel] extends BaseComponent {
         prevState
     }
   }
+
+  val router = routerMapper(subscriber)
 
   router.changes.subscribe(
   { change =>
