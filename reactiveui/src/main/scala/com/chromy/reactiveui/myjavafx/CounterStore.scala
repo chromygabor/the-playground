@@ -1,68 +1,29 @@
-package com.chromy.reactiveui.core
+package com.chromy.reactiveui.myjavafx
 
-import java.util.concurrent.atomic.AtomicReference
+import com.chromy.reactiveui.core._
 
-import monocle._
-
-import scala.collection.mutable.{HashMap => MMap, WeakHashMap}
+import scala.util.{Success, Try}
 
 /**
- * Created by cry on 2015.07.04..
+ * Created by chrogab on 2015.09.03..
  */
-trait UpdateChain[T] {
+case class CounterStoreModel(counters: Map[Uid, Int] = Map(), uid: Uid = Uid()) extends Model[CounterStore]
 
-  private[this] val _subscribersLock: Object = new Object()
-  private[this] val _subscribers: WeakHashMap[((Action, T, T) => T), Int] = WeakHashMap()
+class CounterStore(protected val routerMapper: RouterMapper[CounterStoreModel], protected val initialState: CounterStoreModel) extends Component[CounterStoreModel] {
+  override protected def upd(model: ModelType) = {
+    case _ =>
+      model
+  }
 
-  private[this] def subscribers: List[(Action, T, T) => T] = {
-    var newSubscribers:List[((Action, T, T) => T)]  = null
-    _subscribersLock.synchronized {
-      newSubscribers = _subscribers.toList.sortBy(_._2).map {
-        _._1
+  def increment(uid: Uid): Unit = {
+    val update: (Try[Uid], CounterStoreModel) => CounterStoreModel = { case(Success(uid), model) =>
+      val newValue = if(model.counters.contains(uid)) {
+        model.counters(uid) + 1
+      } else {
+        0
       }
+      model.copy(counters = model.counters.updated(uid, newValue))
     }
-    newSubscribers
-  }
-
-
-  def fromLens[B](lens: Lens[T, B]): UpdateChain[B] = {
-    val parent = UpdateChain.this
-    new UpdateChain[B] {
-
-      private val updater : (Action, T, T) => T = { (action, originalModel, model) =>
-        val newModel = this.innerUpdate(action, lens.get(originalModel), lens.get(model))
-        val res = lens.set(newModel)
-        res(model)
-      }
-
-      parent.subscribe(updater)
-    }
-  }
-
-  def subscribe(subscriber: (Action, T, T) => T): Unit = {
-    _subscribersLock.synchronized {
-      _subscribers.update(subscriber, _subscribers.size)
-    }
-  }
-
-  val update: (Action, T) => T = { (action, model) =>
-    innerUpdate(action, model, model)
-  }
-
-  private[reactiveui] val innerUpdate:  (Action, T, T) => T = { (action, originalModel, model) =>
-    subscribers match {
-      case Nil => model
-      case h :: Nil => h(action, originalModel, model)
-      case h :: t =>
-        t.foldLeft(h(action, originalModel, model)) { (accu, act) =>
-          act(action, originalModel, accu)
-        }
-    }
-
+    channel.onNext(Defer(Success(uid), update))
   }
 }
-
-object UpdateChain {
-  def apply[T](): UpdateChain[T] = new UpdateChain[T] {}
-}
-
