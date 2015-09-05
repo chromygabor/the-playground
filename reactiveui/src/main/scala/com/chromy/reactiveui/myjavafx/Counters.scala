@@ -19,14 +19,14 @@ case object Add extends Action
 
 class Counters(protected val routerMapper: RouterMapper[CountersModel], protected val initialState: CountersModel) extends Component[CountersModel] {
 
-  override def update: (Action, CountersModel, Observer[Action]) => CountersModel = { (action, model, channel) =>
-    action match {
-      case Add => model.copy(counters = CounterModel() :: model.counters)
-      case Close(uid) =>
-        val newCounters = model.counters.filter{ _.uid != uid}
-        model.copy(counters = newCounters)
-      case _ => model
-    }
+  override def upd(model: ModelType): PartialFunction[Action, ModelType] = {
+    case Add =>
+      model.copy(counters = CounterModel() :: model.counters)
+    case Close(uid) =>
+      val newCounters = model.counters.filter {
+        _.uid != uid
+      }
+      model.copy(counters = newCounters)
   }
 
   class ChildrenComponents {
@@ -34,6 +34,7 @@ class Counters(protected val routerMapper: RouterMapper[CountersModel], protecte
   }
 
   val childrenComponents = new ChildrenComponents
+
 }
 
 
@@ -51,6 +52,7 @@ class CountersController extends GenericJavaFXModule[Counters] {
 
   def subscriber(channel: Observer[Action]): Subscriber[CountersModel] = new Subscriber[CountersModel]() {
     override def onNext(model: CountersModel): Unit = {
+      println(s"Counters render: $model on: ${Thread.currentThread.getName}" )
       bAdd.setOnAction { () => channel.onNext(Add) }
     }
 
@@ -61,7 +63,23 @@ class CountersController extends GenericJavaFXModule[Counters] {
 
   def listSubscriber = new Subscriber[List[Operation[Counter]]] {
     override def onNext(changes: List[Operation[Counter]]): Unit = {
-      changes.foreach {
+
+      val moveItems = changes filter {
+        case _: MoveItem[_] => true
+        case _ => false
+      } map { case in@MoveItem(item, originalIndex, _, _) =>
+        (in, pCounters.getChildren.get(originalIndex))
+      } reverse
+
+      changes foreach {
+        case MoveItem(_, _, computedIndex, _) =>
+          pCounters.getChildren.remove(computedIndex)
+        case DeleteItem(_, _, computedIndex) =>
+          pCounters.getChildren.remove(computedIndex)
+        case _ =>
+      }
+
+      changes foreach {
         case AddItem(component, index) =>
           JavaFXModule[CounterController](component) match {
             case Success((parent, controller, _)) =>
@@ -69,8 +87,11 @@ class CountersController extends GenericJavaFXModule[Counters] {
             case Failure(e) =>
               e.printStackTrace()
           }
-        case DeleteItem(component, index) =>
-          pCounters.getChildren.remove(index)
+        case _ =>
+      }
+
+      moveItems.foreach { case (MoveItem(_, _, _, newIndex), module) =>
+        pCounters.getChildren.add(newIndex, module)
       }
     }
 
