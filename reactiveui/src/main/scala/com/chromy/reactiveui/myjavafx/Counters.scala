@@ -17,7 +17,7 @@ case class CountersModel(counters: List[CounterModel] = List(), uid: Uid = Uid()
 case object Add extends Action
 
 
-class Counters(protected val routerMapper: RouterMapper[CountersModel], protected val initialState: CountersModel) extends Component[CountersModel] {
+class Counters(protected val contextMapper: ContextMapper[CountersModel], protected val initialState: CountersModel) extends Component[CountersModel] {
 
   override def upd(model: ModelType): PartialFunction[Action, ModelType] = {
     case Add =>
@@ -30,7 +30,7 @@ class Counters(protected val routerMapper: RouterMapper[CountersModel], protecte
   }
 
   class ChildrenComponents {
-    val counters = ListComponentOf[Counter](router.map(GenLens[CountersModel](_.counters)))((router, state) => new Counter(router.mapper, state))
+    val counters = ListComponentOf[Counter](context.map(GenLens[CountersModel](_.counters)))((context, state) => new Counter(context.mapper, state))
   }
 
   val childrenComponents = new ChildrenComponents

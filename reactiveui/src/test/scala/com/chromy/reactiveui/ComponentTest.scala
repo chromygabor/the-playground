@@ -20,40 +20,34 @@ class ComponentTest extends FunSpecLike {
 
   case object AddItem extends Action
 
-  class MainComponent(val routerMapper: RouterMapper[MainModel], val initialState: MainModel = MainModel()) extends Component[MainModel] {
-    override def update: (Action, MainModel, Observer[Action]) => MainModel = { (action, model, channel) =>
-      model
-    }
+  class MainComponent(val contextMapper: ContextMapper[MainModel], val initialState: MainModel = MainModel()) extends Component[MainModel] {
+    override protected def upd(model: MainModel): PartialFunction[Action, MainModel] = {case _ => model}
 
     class ChildrenComponents {
-      val left = new SubComponent(router.map(GenLens[MainModel](_.left)), initialState.left)
-      val right = new SubComponent(router.map(GenLens[MainModel](_.right)), initialState.right)
+      val left = new SubComponent(context.map(GenLens[MainModel](_.left)), initialState.left)
+      val right = new SubComponent(context.map(GenLens[MainModel](_.right)), initialState.right)
     }
 
     val childrenComponents = new ChildrenComponents
+
   }
 
-  class SubComponent(val routerMapper: RouterMapper[SubModel], val initialState: SubModel = SubModel()) extends Component[SubModel] {
-    override def update: (Action, SubModel, Observer[Action]) => SubModel = { (action, model, channel) =>
-      action match {
-        case AddNumber(model.uid, toAdd) => model.copy(value = model.value + toAdd)
-        case MulNumber(model.uid, toMul) => model.copy(value = model.value * toMul)
-        case _ => model
-      }
+  class SubComponent(val contextMapper: ContextMapper[SubModel], val initialState: SubModel = SubModel()) extends Component[SubModel] {
+    override protected def upd(model: SubModel): PartialFunction[Action, SubModel] = {
+      case AddNumber(model.uid, toAdd) => model.copy(value = model.value + toAdd)
+      case MulNumber(model.uid, toMul) => model.copy(value = model.value * toMul)
+      case _ => model
     }
   }
 
   case class ListModel(subs: List[SubModel] = Nil, uid: Uid = Uid()) extends Model[ListComponent]
 
-  class ListComponent(val routerMapper: RouterMapper[ListModel], val initialState: ListModel = ListModel()) extends Component[ListModel] {
-    override def update: (Action, ListModel, Observer[Action]) => ListModel = { (action, model, channel) =>
-      action match {
-        case AddItem =>
-          val newList = SubModel() :: model.subs
-          model.copy(subs = newList)
-        case _ => model
-      }
-
+  class ListComponent(val contextMapper: ContextMapper[ListModel], val initialState: ListModel = ListModel()) extends Component[ListModel] {
+    override protected def upd(model: ListModel): PartialFunction[Action, ListModel] = {
+      case AddItem =>
+        val newList = SubModel() :: model.subs
+        model.copy(subs = newList)
+      case _ => model
     }
 
     class ChildrenComponents {
@@ -61,6 +55,7 @@ class ComponentTest extends FunSpecLike {
     }
 
     val childrenComponents = new ChildrenComponents
+
   }
 
 
@@ -68,7 +63,7 @@ class ComponentTest extends FunSpecLike {
     ignore("should update its state by an action") {
       new BaseTest {
         val comp = TestComponent[MainComponent](MainModel()) { (mapper, initialState) => new MainComponent(mapper, initialState) }
-        comp.router.channel.onNext(AddNumber(Uid(0), 10))
+        comp.context.channel.onNext(AddNumber(Uid(0), 10))
         assert(comp.state != None)
         assert(comp.state.get.left.value == 10)
         assert(comp.state.get.right.value == 0)
@@ -77,14 +72,14 @@ class ComponentTest extends FunSpecLike {
     ignore("should update its state by a local action") {
       new BaseTest {
 
-        val comp = TestComponent[MainComponent](MainModel()) { (router, initialState) => new MainComponent(router, initialState) }
+        val comp = TestComponent[MainComponent](MainModel()) { (context, initialState) => new MainComponent(context, initialState) }
 
         comp.component.childrenComponents.left.prependToList("SubComponent.left")
         comp.component.childrenComponents.right.prependToList("SubComponent.right")
 
-        comp.router.channel.onNext(AddNumber(Uid(0), 5))
-        comp.component.childrenComponents.left.router.channel.onNext(MulNumber(Uid(0), 10))
-        comp.router.channel.onNext(AddNumber(Uid(1), 5))
+        comp.context.channel.onNext(AddNumber(Uid(0), 5))
+        comp.component.childrenComponents.left.context.channel.onNext(MulNumber(Uid(0), 10))
+        comp.context.channel.onNext(AddNumber(Uid(1), 5))
 
         println("**************************")
         println(list)
@@ -92,11 +87,11 @@ class ComponentTest extends FunSpecLike {
     }
     ignore("should update its state by a local action, and the next global action should not reflect its state") {
       new BaseTest {
-        val comp = TestComponent[MainComponent](MainModel(SubModel(5), SubModel(5))) { (router, initialState) => new MainComponent(router, initialState) }
+        val comp = TestComponent[MainComponent](MainModel(SubModel(5), SubModel(5))) { (context, initialState) => new MainComponent(context, initialState) }
 
-        comp.component.childrenComponents.left.router.channel.onNext(MulNumber(Uid(0), 10))
+        comp.component.childrenComponents.left.context.channel.onNext(MulNumber(Uid(0), 10))
 
-        comp.router.channel.onNext(AddNumber(Uid(0), 5))
+        comp.context.channel.onNext(AddNumber(Uid(0), 5))
 
         assert(comp.component.childrenComponents.left.state != None)
         assert(comp.component.childrenComponents.left.state.get.value == 50)

@@ -24,13 +24,13 @@ trait Model[C <: BaseComponent] extends BaseModel {
 trait BaseComponent {
   type ModelType
 
-  def router: Router[ModelType]
+  def context: Context[ModelType]
 }
 
 trait Component[M <: BaseModel] extends BaseComponent {
   type ModelType = M
 
-  protected def routerMapper: RouterMapper[ModelType]
+  protected def contextMapper: ContextMapper[ModelType]
 
   protected def initialState: ModelType
 
@@ -78,9 +78,9 @@ trait Component[M <: BaseModel] extends BaseComponent {
     }
   }
 
-  val router = routerMapper(subscriber)
+  val context = contextMapper(subscriber)
 
-  router.changes.distinctUntilChanged.subscribe(
+  context.changes.distinctUntilChanged.subscribe(
   { change =>
     println(s"[$name] new change from parent: $change")
     _changes.onNext(change)
@@ -88,14 +88,14 @@ trait Component[M <: BaseModel] extends BaseComponent {
   )
 
   lazy val chainScheduler = new ScalaScheduler {
-    val asJavaScheduler = Schedulers.from(router.chainExecutor)
+    val asJavaScheduler = Schedulers.from(context.chainExecutor)
   }
 
   lazy val changesScheduler = new ScalaScheduler {
-    val asJavaScheduler = Schedulers.from(router.changesExecutor)
+    val asJavaScheduler = Schedulers.from(context.changesExecutor)
   }
 
-  implicit val chainExecutionContext:ExecutionContext = ExecutionContext.fromExecutor(router.chainExecutor)
+  implicit val chainExecutionContext:ExecutionContext = ExecutionContext.fromExecutor(context.chainExecutor)
 
   private[this] val stream = _channel.observeOn(chainScheduler).scan((initialState, initialState, Nop.asInstanceOf[Action])) { case ((beforePrevState, prevState, prevAction), action) =>
     Try[ModelType] {
@@ -136,13 +136,13 @@ trait Component[M <: BaseModel] extends BaseComponent {
           case action@StateChange(a, s: ModelType) =>
             val wrap = ActualState(a, s)
             println(s"[$name] action is StateChange sending to channel as a $wrap")
-            router.channel.onNext(wrap)
+            context.channel.onNext(wrap)
           case action: ActionWrapper =>
             println(s"[$name] action is already a WrapperAction so just send up to channel: ${action}")
-            router.channel.onNext(action)
+            context.channel.onNext(action)
           case action =>
             println(s"[$name] action is a simple action wrapping to ActualState and sending to channel: ${ActualState(action, actualState)}")
-            router.channel.onNext(ActualState(action, actualState))
+            context.channel.onNext(ActualState(action, actualState))
         }
     }
   })
@@ -159,7 +159,7 @@ trait Component[M <: BaseModel] extends BaseComponent {
     }
 
     future.onComplete {
-      case e => router.channel.onNext(Defer(e, update))
+      case e => context.channel.onNext(Defer(e, update))
     }
   }
 }

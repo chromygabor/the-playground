@@ -1,5 +1,7 @@
 package com.chromy.reactiveui.core
 
+import java.util.concurrent.{Executors, Executor}
+
 import rx.lang.scala.Subject
 import rx.lang.scala.subjects.BehaviorSubject
 
@@ -9,25 +11,31 @@ import scala.util.{Failure, Success, Try}
  * Created by cry on 2015.08.04..
  */
 
-trait RouterComponent[C <: BaseComponent] extends BaseComponent {
+trait ContextComponent[C <: BaseComponent] extends BaseComponent {
   override type ModelType = C#ModelType
 
-  def router: Router[ModelType]
+  def context: Context[ModelType]
 
   def component: C
 }
 
 object TestComponent {
-  def apply[C <: BaseComponent](initialState: C#ModelType)(f: (RouterMapper[C#ModelType], C#ModelType) => C): RouterComponent[C] = {
+  def apply[C <: BaseComponent](initialState: C#ModelType)(f: (ContextMapper[C#ModelType], C#ModelType) => C): ContextComponent[C] = {
     type M = C#ModelType
-    new RouterComponent[C] {
-      private lazy val name = s"DSP-RouterComponent"
+    new ContextComponent[C] {
+      private lazy val name = s"DSP-ContextComponent"
       println(s"[$name] created ")
 
-      val router = new Router[M] {
+      val context = new Context[M] {
         override val changes = BehaviorSubject[M]
         override val chain: UpdateChain[M] = UpdateChain()
         override val channel = Subject[Action]
+        override def chainExecutor: Executor = new Executor {
+          override def execute(command: Runnable): Unit = command.run()
+        }
+        override def changesExecutor: Executor = new Executor {
+          override def execute(command: Runnable): Unit = command.run()
+        }
 
         val stream = channel.scan(initialState) { (oldState, action) =>
           Try {
@@ -47,9 +55,8 @@ object TestComponent {
           println(s"[$name] - A publishing a change: $newState")
           changes.onNext(newState)
         })
-
       }
-      val component = f(router.mapper, initialState)
+      val component = f(context.mapper, initialState)
     }
   }
 }

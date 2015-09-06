@@ -14,7 +14,7 @@ import scala.util.{Failure, Success}
 
 case class CounterModel(value: Int = 0, buttonEnabled: Boolean = true, uid: Uid = Uid()) extends Model[Counter]
 
-class Counter(protected val routerMapper: RouterMapper[CounterModel], protected val initialState: CounterModel) extends Component[CounterModel] {
+class Counter(protected val contextMapper: ContextMapper[CounterModel], protected val initialState: CounterModel) extends Component[CounterModel] {
   val counterStore = Repository.service[CounterStore]
 
   override def upd(model: ModelType): PartialFunction[Action, ModelType] = {

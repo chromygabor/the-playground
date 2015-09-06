@@ -25,7 +25,7 @@ trait UpdateChain[T] {
   }
 
 
-  def fromLens[B](lens: Lens[T, B]): UpdateChain[B] = {
+  def map[B](lens: Lens[T, B]): UpdateChain[B] = {
     val parent = UpdateChain.this
     new UpdateChain[B] {
 

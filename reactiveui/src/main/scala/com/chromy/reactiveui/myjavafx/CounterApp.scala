@@ -71,7 +71,7 @@ object JavaFXModule {
     }
   }
 
-  def apply[M <: JavaFXModule : Manifest](routerMapper: RouterMapper[M#Model], initialState: M#Model): Try[(Parent, M, M#Component)] = {
+  def apply[M <: JavaFXModule : Manifest](contextMapper: ContextMapper[M#Model], initialState: M#Model): Try[(Parent, M, M#Component)] = {
     import reflect.runtime.{currentMirror => mirror}
     import scala.reflect.runtime.universe._
 
@@ -86,7 +86,7 @@ object JavaFXModule {
       val ctor = typeOfComponent.typeSymbol.asClass.primaryConstructor
 
       val classMirror = mirror.reflectClass(typeOfComponent.typeSymbol.asClass)
-      val component = classMirror.reflectConstructor(ctor.asMethod).apply(routerMapper, initialState).asInstanceOf[M#Component]
+      val component = classMirror.reflectConstructor(ctor.asMethod).apply(contextMapper, initialState).asInstanceOf[M#Component]
 
       val node: Parent = loader.load()
       val controller = loader.getController[M]
@@ -119,7 +119,7 @@ object CounterApp extends App {
 
   var _component: C = _
 
-  val router: Router[M] = new Router[M] {
+  val context: Context[M] = new Context[M] {
 
     lazy val name = s"DSP-MainComponent"
     println(s"[$name] created ")
@@ -161,12 +161,12 @@ object CounterApp extends App {
   }
 
 
-  Repository.services("counterStore") = new CounterStore(router.map(GenLens[CounterAppModel](_.counterStore)), initialState.counterStore)
+  Repository.services("counterStore") = new CounterStore(context.map(GenLens[CounterAppModel](_.counterStore)), initialState.counterStore)
 
   Platform.runLater(new Runnable() {
     override def run(): Unit = {
 
-      JavaFXModule[CountersController](router.map(GenLens[CounterAppModel](_.counters)), initialState.counters) match {
+      JavaFXModule[CountersController](context.map(GenLens[CounterAppModel](_.counters)), initialState.counters) match {
         case Success((parent, appController, appComponent)) =>
           _component = appComponent
           val stage = new Stage

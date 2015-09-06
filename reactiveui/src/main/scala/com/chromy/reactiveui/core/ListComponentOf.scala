@@ -10,11 +10,11 @@ import rx.schedulers.Schedulers
  */
 
 object ListComponentOf {
-  def apply[A <: BaseComponent{type ModelType <: BaseModel}](iRouterMapper: RouterMapper[List[A#ModelType]])(iCreate: (Router[A#ModelType], A#ModelType) => A): ListComponentOf[A] = {
+  def apply[A <: BaseComponent{type ModelType <: BaseModel}](iContextMapper: ContextMapper[List[A#ModelType]])(iCreate: (Context[A#ModelType], A#ModelType) => A): ListComponentOf[A] = {
     val listComponentOf = new ListComponentOf[A] {
-      override def routerMapper = iRouterMapper
+      override def contextMapper = iContextMapper
 
-      override def create: (Router[A#ModelType], A#ModelType) => A = iCreate
+      override def create: (Context[A#ModelType], A#ModelType) => A = iCreate
     }
     listComponentOf
   }
@@ -30,9 +30,9 @@ trait ListComponentOf[A <: BaseComponent {type ModelType <: BaseModel}] extends 
   type ComponentModel = ComponentType#ModelType
   type ModelType = List[Operation[ComponentType]]
 
-  protected def routerMapper: RouterMapper[List[ComponentModel]]
+  protected def contextMapper: ContextMapper[List[ComponentModel]]
 
-  protected def create: (Router[ComponentModel], ComponentModel) => ComponentType
+  protected def create: (Context[ComponentModel], ComponentModel) => ComponentType
 
 
   private lazy val name = s"ListComponentOf"
@@ -91,52 +91,52 @@ trait ListComponentOf[A <: BaseComponent {type ModelType <: BaseModel}] extends 
 
     state.map { in =>
       childrenComponents.get(in.uid) match {
-        case Some(component) => component.router.chain.update(action, in.asInstanceOf[component.ModelType])
+        case Some(component) => component.context.chain.update(action, in.asInstanceOf[component.ModelType])
         case _ => in
       }
     }
   }
 
-  val myRouter = routerMapper(subscriber)
+  val myContext = contextMapper(subscriber)
 
-  private val myChanges = myRouter.changes.map(_.map { in => in.uid -> in }.toMap)
+  private val myChanges = myContext.changes.map(_.map { in => in.uid -> in }.toMap)
 
   def createComponent(item: ComponentModel): ComponentType = {
-    create(new Router[ComponentModel] {
+    create(new Context[ComponentModel] {
       override val changes: Observable[ComponentModel] = myChanges.filter {_.contains(item.uid)} map { change => change(item.uid)}
       override val chain: UpdateChain[ComponentModel] = UpdateChain[ComponentModel]
-      override val channel: Observer[Action] = myRouter.channel
-      override val chainExecutor = myRouter.chainExecutor
-      override val changesExecutor = myRouter.changesExecutor
+      override val channel: Observer[Action] = myContext.channel
+      override val chainExecutor = myContext.chainExecutor
+      override val changesExecutor = myContext.changesExecutor
     }, item)
   }
 
-  val router = {
-    new Router[ModelType] {
-      override def changes: Observable[ModelType] = stream.sample(myRouter.changes)
+  val context = {
+    new Context[ModelType] {
+      override def changes: Observable[ModelType] = stream.sample(myContext.changes)
 
       override def chain: UpdateChain[ModelType] = {
         throw new IllegalStateException("This shouldn't be called because never registered")
       }
 
-      override def channel: Observer[Action] = myRouter.channel
+      override def channel: Observer[Action] = myContext.channel
 
-      override val chainExecutor = myRouter.chainExecutor
-      override val changesExecutor = myRouter.changesExecutor
+      override val chainExecutor = myContext.chainExecutor
+      override val changesExecutor = myContext.changesExecutor
     }
   }
 
   lazy val chainScheduler = new ScalaScheduler {
-    val asJavaScheduler = Schedulers.from(router.chainExecutor)
+    val asJavaScheduler = Schedulers.from(context.chainExecutor)
   }
 
   lazy val changesScheduler = new ScalaScheduler {
-    val asJavaScheduler = Schedulers.from(router.changesExecutor)
+    val asJavaScheduler = Schedulers.from(context.changesExecutor)
   }
 
 
   def subscribe(subscriber: Subscriber[List[Operation[ComponentType]]]) = {
-    router.changes.observeOn(changesScheduler).subscribe(subscriber)
+    context.changes.observeOn(changesScheduler).subscribe(subscriber)
   }
 }
 

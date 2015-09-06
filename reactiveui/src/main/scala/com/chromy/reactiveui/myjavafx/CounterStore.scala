@@ -9,7 +9,7 @@ import scala.util.{Success, Try}
  */
 case class CounterStoreModel(counters: Map[Uid, Int] = Map(), uid: Uid = Uid()) extends Model[CounterStore]
 
-class CounterStore(protected val routerMapper: RouterMapper[CounterStoreModel], protected val initialState: CounterStoreModel) extends Component[CounterStoreModel] {
+class CounterStore(protected val contextMapper: ContextMapper[CounterStoreModel], protected val initialState: CounterStoreModel) extends Component[CounterStoreModel] {
   override protected def upd(model: ModelType) = {
     case _ =>
       model

@@ -15,7 +15,7 @@ trait BaseTest {
   implicit class component2State[C <: BaseComponent{type ModelType <: BaseModel}](comp : C ) {
     def state: Option[C#ModelType] = {
       var state: C#ModelType = null.asInstanceOf[C#ModelType]
-      val subscription = comp.router.changes.subscribeOn(ImmediateScheduler()).subscribe({lastState => state = lastState.asInstanceOf[C#ModelType]})
+      val subscription = comp.context.changes.subscribeOn(ImmediateScheduler()).subscribe({lastState => state = lastState.asInstanceOf[C#ModelType]})
       subscription.unsubscribe()
       state match {
         case null => None
@@ -23,7 +23,7 @@ trait BaseTest {
       }
     }
     def prependToList(name: String): Unit = {
-      comp.router.changes.subscribe({change =>
+      comp.context.changes.subscribe({change =>
         list = Change(name, change) :: list
       })
     }
