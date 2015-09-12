@@ -12,14 +12,14 @@ import rx.lang.scala.{Observer, Subscriber}
 import scala.util.{Failure, Success}
 
 
-case class CountersModel(counters: List[CounterModel] = List(), uid: Uid = Uid()) extends Model[Counters]
+case class CountersModel(counters: List[CounterModel] = List(), counterNavigator: CounterNavigatorModel = CounterNavigatorModel(), uid: Uid = Uid()) extends Model[Counters]
 
 case object Add extends Action
 
 
 class Counters(protected val contextMapper: ContextMapper[CountersModel], protected val initialState: CountersModel) extends Component[CountersModel] {
 
-  override def upd(model: ModelType): PartialFunction[Action, ModelType] = {
+  override def update(model: ModelType) = Simple {
     case Add =>
       model.copy(counters = CounterModel() :: model.counters)
     case Close(uid) =>
@@ -30,7 +30,8 @@ class Counters(protected val contextMapper: ContextMapper[CountersModel], protec
   }
 
   class ChildrenComponents {
-    val counters = ListComponentOf[Counter](context.map(GenLens[CountersModel](_.counters)))((context, state) => new Counter(context.mapper, state))
+    val counters = ListComponentOf[Counter](context.map(GenLens[CountersModel](_.counters)))((contextMapper, state) => new Counter(contextMapper, state))
+    val counterNavigator = new CounterNavigator(context.map(GenLens[CountersModel](_.counterNavigator)), initialState.counterNavigator)
   }
 
   val childrenComponents = new ChildrenComponents
@@ -43,16 +44,16 @@ class CountersController extends GenericJavaFXModule[Counters] {
   @FXML private var _bAdd: Button = _
   lazy val bAdd = _bAdd
 
-  @FXML private var _bRemove: Button = _
-
   @FXML private var _pCounters: FlowPane = _
   lazy val pCounters = _pCounters
+
+  @FXML private var _counterNavigatorController: CounterNavigatorController = _
+  lazy val counterNavigator = _counterNavigatorController
 
   private var _component: Counters = _
 
   def subscriber(channel: Observer[Action]): Subscriber[CountersModel] = new Subscriber[CountersModel]() {
     override def onNext(model: CountersModel): Unit = {
-      println(s"Counters render: $model on: ${Thread.currentThread.getName}" )
       bAdd.setOnAction { () => channel.onNext(Add) }
     }
 
@@ -102,6 +103,9 @@ class CountersController extends GenericJavaFXModule[Counters] {
 
   override def dispatch(component: Counters): Counters = {
     _component = component
+
+    counterNavigator.dispatch(component.childrenComponents.counterNavigator)
+
     _component.subscribe(subscriber(_component.channel))
 
     _component.childrenComponents.counters.subscribe(listSubscriber)
