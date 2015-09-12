@@ -6,37 +6,31 @@ import javafx.scene.control.{Button, Label}
 import com.chromy.reactiveui.core._
 import com.chromy.reactiveui.core.misc.Utils._
 import com.chromy.reactiveui.myjavafx.CounterApp.Repository
-import rx.lang.scala.{Subscription, Observer, Subscriber}
-
-import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Failure, Success}
+import rx.lang.scala.{Observer, Subscriber}
 
 
 case class CounterModel(value: Int = 0, buttonEnabled: Boolean = true, uid: Uid = Uid()) extends Model[Counter]
 
 class Counter(protected val contextMapper: ContextMapper[CounterModel], protected val initialState: CounterModel) extends Component[CounterModel] {
-  val counterStore = Repository.service[CounterStore]
 
-  override def upd(model: ModelType): PartialFunction[Action, ModelType] = {
+  //val counterStore = Repository.service[CounterStore]
+  val counterStore = Repository.ser[CounterStore]
+
+  counterStore.create(initialState.uid)
+
+  override def update(model: ModelType) = Simple {
     case Close(model.uid) =>
       model
     case Increment(model.uid) =>
       counterStore.increment(model.uid)
-
-      fut {
-        println("Computing....")
-        Thread.sleep(2000)
-        println("Ready")
-        1
-      } {
-        case (Success(result), model) => model.copy(value = model.value + result)
-        case (Failure(error), model) => model
-      }
       model
-    case Incremented(model.uid) =>
-      model.copy(value = model.value + 1)
     case Decrement(model.uid) =>
-      model.copy(value = model.value - 1)
+      counterStore.decrement(model.uid)
+      model
+    case CounterStore.Changed(stateAccessor) =>
+      val (_, counterState) = stateAccessor(model.uid).get
+
+      model.copy(value = counterState.value)
   }
   override def toString = s"Counter(${initialState.uid})"
 
@@ -63,7 +57,6 @@ class CounterController extends GenericJavaFXModule[Counter] {
 
   def subscriber(channel: Observer[Action]): Subscriber[CounterModel] = new Subscriber[CounterModel]() {
     override def onNext(model: CounterModel): Unit = {
-      println(s"Counter render: $model on: ${Thread.currentThread.getName}" )
       btnIncrement.setDisable(!model.buttonEnabled)
       btnDecrement.setDisable(!model.buttonEnabled)
 
