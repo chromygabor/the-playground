@@ -22,8 +22,9 @@ trait Context[A] {
   def channel: Observer[Action]
   def chain: UpdateChain[A]
 
-  def chainExecutor: Executor
-  def changesExecutor: Executor
+  def backgroundExecutor: ExecutionContext
+//  def chainSch: Scheduler
+//  def changesSch: Scheduler
 
   def map[B](lens: Lens[A, B]): ContextMapper[B] = {
     val parent = this
@@ -38,8 +39,9 @@ trait Context[A] {
         override val changes = parent.changes.map { in => lens.get(in) }
         override val channel = parent.channel
         override val chain = parent.chain.map(lens)
-        override val chainExecutor: Executor = parent.chainExecutor
-        override val changesExecutor: Executor = parent.changesExecutor
+//        override val chainSch: Scheduler = parent.chainSch
+//        override val changesSch: Scheduler = parent.changesSch
+        override val backgroundExecutor: ExecutionContext = parent.backgroundExecutor
         chain.subscribe(f)
       }
     }
