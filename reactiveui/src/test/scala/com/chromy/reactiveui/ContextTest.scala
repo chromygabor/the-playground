@@ -6,7 +6,10 @@ import com.chromy.reactiveui.TestUtil.{AddNumber, SimpleModel, SubSubModel}
 import com.chromy.reactiveui.core.{Action, LocalAction, Context, UpdateChain}
 import monocle.macros.GenLens
 import org.scalatest.FunSpecLike
+import rx.lang.scala.schedulers.ImmediateScheduler
 import rx.lang.scala.{Observable, Observer, Subject, Subscriber}
+
+import scala.concurrent.ExecutionContext
 
 /**
  * Created by cry on 2015.07.12..
@@ -45,26 +48,29 @@ class ContextTest extends FunSpecLike {
 
       override val chain: UpdateChain[A] = UpdateChain[A]
 
-      override val changesExecutor: Executor = Executors.newSingleThreadExecutor()
-
-      override val chainExecutor: Executor = Executors.newSingleThreadExecutor()
+      override def backgroundExecutor: ExecutionContext = ExecutionContext.fromExecutor(new Executor {
+        override def execute(command: Runnable): Unit = command.run()
+      })
 
       override val channel = Subject[Action]
       channel.subscribe(new Subscriber[Action]() {
         override def onNext(value: Action): Unit = action = value
       })
+
     }
 
     val subMapper = simpleContext.map(GenLens[SimpleModel](_.sub))
     val subContext = subMapper(TestUtil.updateSubSub)
 
     it("channel should propagate up the actions 20000x") {
-
       val result = List.range(0, 20000).foreach{ i =>
         subContext.channel.onNext(AddNumber(i))
       }
 
       assert(action == AddNumber(19999))
+    }
+
+    it("should contain the actual state somehow") {
     }
   }
 }
