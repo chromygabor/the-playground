@@ -1,20 +1,25 @@
 package com.chromy.reactiveui.core
 
 
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicReference
+
 import com.chromy.reactiveui.core.misc.ListDiff
 import rx.lang.scala.{Scheduler => ScalaScheduler, _}
 import rx.schedulers.Schedulers
+
+import scala.concurrent.ExecutionContext
 
 /**
  * Created by cry on 2015.08.04..
  */
 
 object ListComponentOf {
-  def apply[A <: BaseComponent{type ModelType <: BaseModel}](iContextMapper: ContextMapper[List[A#ModelType]])(iCreate: (Context[A#ModelType], A#ModelType) => A): ListComponentOf[A] = {
+  def apply[A <: BaseComponent{type ModelType <: BaseModel}](iContextMapper: ContextMapper[List[A#ModelType]])(iCreate: (ContextMapper[A#ModelType], A#ModelType) => A): ListComponentOf[A] = {
     val listComponentOf = new ListComponentOf[A] {
       override def contextMapper = iContextMapper
 
-      override def create: (Context[A#ModelType], A#ModelType) => A = iCreate
+      override def create: (ContextMapper[A#ModelType], A#ModelType) => A = iCreate
     }
     listComponentOf
   }
@@ -32,19 +37,21 @@ trait ListComponentOf[A <: BaseComponent {type ModelType <: BaseModel}] extends 
 
   protected def contextMapper: ContextMapper[List[ComponentModel]]
 
-  protected def create: (Context[ComponentModel], ComponentModel) => ComponentType
+  protected def create: (ContextMapper[ComponentModel], ComponentModel) => ComponentType
 
 
   private lazy val name = s"ListComponentOf"
   println(s"[$name] created with")
 
+  val queue = new ConcurrentLinkedQueue[List[Operation[ComponentType]]]()
+
   val stream = Subject[ModelType]
 
-  private var _components = Map[Uid, ComponentType]()
+  private val _components = new AtomicReference[Map[Uid, ComponentType]](Map())
 
-  def childrenComponents = _components
+  def childrenComponents = _components.get()
 
-  def childrenComponents_=(newComponents: Map[Uid, ComponentType]) = _components = newComponents
+  def childrenComponents_=(newComponents: Map[Uid, ComponentType]) = _components.set(newComponents)
 
 
   private val subscriber: (Action, List[ComponentModel], List[ComponentModel]) => List[ComponentModel] = { (action, original, state) =>
@@ -82,12 +89,15 @@ trait ListComponentOf[A <: BaseComponent {type ModelType <: BaseModel}] extends 
       case _ => true
       }
     }.map { case (item, index) =>
-      val component = childrenComponents.getOrElse(item.uid, createComponent(item))
-      childrenComponents = childrenComponents + (item.uid -> component)
+      val component = childrenComponents.getOrElse(item.uid, {
+        val newComponent = createComponent(item)
+        childrenComponents = childrenComponents + (item.uid -> newComponent)
+        newComponent
+      })
       AddItem(component, index)
     }.toList
 
-    stream.onNext(deleteItems ++ insertItems)
+    queue.add(deleteItems ++ insertItems)
 
     state.map { in =>
       childrenComponents.get(in.uid) match {
@@ -106,14 +116,13 @@ trait ListComponentOf[A <: BaseComponent {type ModelType <: BaseModel}] extends 
       override val changes: Observable[ComponentModel] = myChanges.filter {_.contains(item.uid)} map { change => change(item.uid)}
       override val chain: UpdateChain[ComponentModel] = UpdateChain[ComponentModel]
       override val channel: Observer[Action] = myContext.channel
-      override val chainExecutor = myContext.chainExecutor
-      override val changesExecutor = myContext.changesExecutor
-    }, item)
+      override val backgroundExecutor = myContext.backgroundExecutor
+    }.mapper, item)
   }
 
   val context = {
     new Context[ModelType] {
-      override def changes: Observable[ModelType] = stream.sample(myContext.changes)
+      override def changes: Observable[ModelType] = myContext.changes.map { _ => queue.poll() }
 
       override def chain: UpdateChain[ModelType] = {
         throw new IllegalStateException("This shouldn't be called because never registered")
@@ -121,22 +130,12 @@ trait ListComponentOf[A <: BaseComponent {type ModelType <: BaseModel}] extends 
 
       override def channel: Observer[Action] = myContext.channel
 
-      override val chainExecutor = myContext.chainExecutor
-      override val changesExecutor = myContext.changesExecutor
+      override val backgroundExecutor = myContext.backgroundExecutor
     }
   }
 
-  lazy val chainScheduler = new ScalaScheduler {
-    val asJavaScheduler = Schedulers.from(context.chainExecutor)
-  }
-
-  lazy val changesScheduler = new ScalaScheduler {
-    val asJavaScheduler = Schedulers.from(context.changesExecutor)
-  }
-
-
   def subscribe(subscriber: Subscriber[List[Operation[ComponentType]]]) = {
-    context.changes.observeOn(changesScheduler).subscribe(subscriber)
+    context.changes.subscribe(subscriber)
   }
 }
 
