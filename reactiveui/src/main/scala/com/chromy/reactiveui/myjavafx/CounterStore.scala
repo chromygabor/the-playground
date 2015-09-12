@@ -1,114 +1,121 @@
 package com.chromy.reactiveui.myjavafx
 
-import javafx.fxml.FXML
-import javafx.scene.control.Button
-import javafx.scene.layout.FlowPane
-
 import com.chromy.reactiveui.core._
-import com.chromy.reactiveui.core.misc.Utils._
-import monocle.macros.GenLens
-import rx.lang.scala.{Observer, Subscriber}
+import com.chromy.reactiveui.myjavafx.CounterApp.ServiceBuilder
+import com.chromy.reactiveui.myjavafx.CounterStore._
 
-import scala.util.{Failure, Success}
+import scala.collection.immutable.ListMap
 
+/**
+ * Created by chrogab on 2015.09.03..
+ */
+case class CounterStoreModel(counters: ListMap[Uid, Int] = ListMap(), uid: Uid = Uid()) extends Model[CounterStore]
 
-case class CountersModel(counters: List[CounterModel] = List(), counterNavigator: CounterNavigatorModel = CounterNavigatorModel(), uid: Uid = Uid()) extends Model[Counters]
+object CounterStore {
 
-case object Add extends Action
+  implicit object Builder extends ServiceBuilder[CounterStore] {
+    private[this] var _instance = Option.empty[CounterStore]
 
-
-class Counters(protected val contextMapper: ContextMapper[CountersModel], protected val initialState: CountersModel) extends Component[CountersModel] {
-
-  override def update(model: ModelType) = Simple {
-    case Add =>
-      model.copy(counters = CounterModel() :: model.counters)
-    case Close(uid) =>
-      val newCounters = model.counters.filter {
-        _.uid != uid
+    override def init(context: ContextMapper[CounterStoreModel]): () => CounterStore = {
+      if (_instance.isEmpty) {
+        _instance = Some(new CounterStore(context, CounterStoreModel()))
       }
-      model.copy(counters = newCounters)
+      { () => _instance.get }
+    }
   }
 
-  class ChildrenComponents {
-    val counters = ListComponentOf[Counter](context.map(GenLens[CountersModel](_.counters)))((contextMapper, state) => new Counter(contextMapper, state))
-    val counterNavigator = new CounterNavigator(context.map(GenLens[CountersModel](_.counterNavigator)), initialState.counterNavigator)
+  trait CounterState {
+    val value: Int
+    val hasPrev: Boolean
+    val hasNext: Boolean
+
+    def next: Option[(Uid, CounterState)]
+
+    def prev: Option[(Uid, CounterState)]
   }
 
-  val childrenComponents = new ChildrenComponents
+  object CounterState {
+    def apply(iValue: Int, iHasNext: Boolean, iHasPrev: Boolean, iNext: => Option[(Uid, CounterState)], iPrev: => Option[(Uid, CounterState)]): CounterState = new CounterState {
+      override val value: Int = iValue
+      override val hasPrev: Boolean = iHasPrev
+      override val hasNext: Boolean = iHasNext
+
+      override def prev: Option[(Uid, CounterState)] = iPrev
+
+      override def next: Option[(Uid, CounterState)] = iNext
+    }
+  }
+
+  trait CounterStateAccessor {
+    def first: Option[(Uid, CounterState)]
+
+    def apply(uid: Uid): Option[(Uid, CounterState)]
+  }
+
+  case class Changed(f: CounterStateAccessor) extends Action
 
 }
 
 
-class CountersController extends GenericJavaFXModule[Counters] {
+class CounterStore(protected val contextMapper: ContextMapper[CounterStoreModel], protected val initialState: CounterStoreModel) extends Component[CounterStoreModel] {
+  private[this] def stateAccessor(counters: ListMap[Uid, Int]): CounterStateAccessor = {
+    val indexedCounters = counters.zipWithIndex.map { case ((uid, value), index) => uid ->(value, index) } toMap
 
-  @FXML private var _bAdd: Button = _
-  lazy val bAdd = _bAdd
+    def createState(iUid: Uid): Option[(Uid, CounterState)] = for {
+      (_, (value, index)) <- indexedCounters.find { case (uid, (value, index)) => uid == iUid }
+    } yield {
 
-  @FXML private var _pCounters: FlowPane = _
-  lazy val pCounters = _pCounters
+        val oNextUid = indexedCounters.find { case (uid, (_, currIndex)) => currIndex == index + 1 }
+        lazy val nextState = oNextUid.flatMap { case (uid, (_, _)) => createState(uid) }
+        val oPrevUid = indexedCounters.find { case (uid, (_, currIndex)) => currIndex == index - 1 }
+        lazy val prevState = oPrevUid.flatMap { case (uid, (_, _)) => createState(uid) }
 
-  @FXML private var _counterNavigatorController: CounterNavigatorController = _
-  lazy val counterNavigator = _counterNavigatorController
-
-  private var _component: Counters = _
-
-  def subscriber(channel: Observer[Action]): Subscriber[CountersModel] = new Subscriber[CountersModel]() {
-    override def onNext(model: CountersModel): Unit = {
-      bAdd.setOnAction { () => channel.onNext(Add) }
-    }
-
-    override def onError(error: Throwable): Unit = super.onError(error)
-
-    override def onCompleted(): Unit = super.onCompleted()
-  }
-
-  def listSubscriber = new Subscriber[List[Operation[Counter]]] {
-    override def onNext(changes: List[Operation[Counter]]): Unit = {
-
-      val moveItems = changes filter {
-        case _: MoveItem[_] => true
-        case _ => false
-      } map { case in@MoveItem(item, originalIndex, _, _) =>
-        (in, pCounters.getChildren.get(originalIndex))
-      } reverse
-
-      changes foreach {
-        case MoveItem(_, _, computedIndex, _) =>
-          pCounters.getChildren.remove(computedIndex)
-        case DeleteItem(_, _, computedIndex) =>
-          pCounters.getChildren.remove(computedIndex)
-        case _ =>
+        (iUid, CounterState(value,
+          oNextUid.isDefined,
+          oPrevUid.isDefined,
+          nextState,
+          prevState
+        ))
       }
 
-      changes foreach {
-        case AddItem(component, index) =>
-          JavaFXModule[CounterController](component) match {
-            case Success((parent, controller, _)) =>
-              pCounters.getChildren.add(index, parent)
-            case Failure(e) =>
-              e.printStackTrace()
+    new CounterStateAccessor {
+      override def first: Option[(Uid, CounterState)] = for {
+        (uid, (_, _)) <- indexedCounters.find { case (_, (_, index)) => index == 0 }
+        counterState <- createState(uid)
+      } yield counterState
+
+      override def apply(uid: Uid): Option[(Uid, CounterState)] = createState(uid)
+    }
+  }
+
+  private[this] def update(uid: Uid, f: Int => Int): Unit = {
+    val update: (Uid, CounterStoreModel) => CounterStoreModel = {
+      case (uid, model) =>
+        val newCounters = if (model.counters.contains(uid)) {
+          val newValue = f(model.counters(uid))
+          model.counters.map { case (iUid, iValue) =>
+            if (uid == iUid) iUid -> newValue
+            else iUid -> iValue
           }
-        case _ =>
-      }
-
-      moveItems.foreach { case (MoveItem(_, _, _, newIndex), module) =>
-        pCounters.getChildren.add(newIndex, module)
-      }
+        } else {
+          model.counters.updated(uid, 0)
+        }
+        channel.onNext(CounterStore.Changed(stateAccessor(newCounters)))
+        model.copy(counters = newCounters)
     }
-
-    override def onError(error: Throwable): Unit = super.onError(error)
-
-    override def onCompleted(): Unit = super.onCompleted()
+    channel.onNext(Defer(uid, update))
   }
 
-  override def dispatch(component: Counters): Counters = {
-    _component = component
-
-    counterNavigator.dispatch(component.childrenComponents.counterNavigator)
-
-    _component.subscribe(subscriber(_component.channel))
-
-    _component.childrenComponents.counters.subscribe(listSubscriber)
-    _component
+  def create(uid: Uid): Unit = {
+    update(uid, _ + 0)
   }
+
+  def increment(uid: Uid): Unit = {
+    update(uid, _ + 1)
+  }
+
+  def decrement(uid: Uid): Unit = {
+    update(uid, _ - 1)
+  }
+
 }
