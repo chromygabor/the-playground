@@ -1,6 +1,6 @@
 package com.chromy.reactiveui.myjavafx
 
-import java.util.concurrent.{Executors, Executor}
+import java.util.concurrent.{Executor, Executors}
 import javafx.application.Platform
 import javafx.embed.swing.JFXPanel
 import javafx.fxml.FXMLLoader
@@ -9,14 +9,14 @@ import javafx.stage.Stage
 
 import com.chromy.reactiveui.core._
 import monocle.macros.GenLens
-import rx.lang.scala.schedulers.{IOScheduler, ComputationScheduler}
+import rx.lang.scala.schedulers.IOScheduler
 import rx.lang.scala.subjects.BehaviorSubject
-import rx.lang.scala.{Scheduler => ScalaScheduler, Observable, Observer, Subject}
+import rx.lang.scala.{Observable, Observer, Scheduler => ScalaScheduler, Subject}
 import rx.schedulers.Schedulers
 
 import scala.annotation.implicitNotFound
-import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Try, Failure, Success}
+import scala.concurrent.ExecutionContext
+import scala.util.Try
 
 
 /**
@@ -74,7 +74,6 @@ object JavaFXModule {
 
   def apply[M <: JavaFXModule : Manifest](contextMapper: ContextMapper[M#Model], initialState: M#Model): Try[(Parent, M, M#Component)] = {
     import reflect.runtime.{currentMirror => mirror}
-    import scala.reflect.runtime.universe._
 
     val ct = manifest[M]
 
@@ -105,11 +104,11 @@ trait GenericJavaFXModule[A <: BaseComponent] extends JavaFXModule {
 
 }
 
-case class CounterAppModel(counters: CountersModel = CountersModel(), counterStore: CounterStoreModel = CounterStoreModel(), services: Map[String, _ <: BaseModel] = Map())
+case class CounterAppModel(counters: CountersModel = CountersModel(), services: Map[String, _ <: BaseModel] = Map())
 
 object CounterApp extends App {
 
-  import scala.util.{Try, Success, Failure}
+  import scala.util.{Failure, Success, Try}
 
   type C = Counters
   type M = CounterAppModel
@@ -158,7 +157,7 @@ object CounterApp extends App {
   }
 
 
-  Repository.services("counterStore") = new CounterStore(context.map(GenLens[CounterAppModel](_.counterStore)), initialState.counterStore)
+  //Repository.services("counterStore") = new CounterStore(context.map(GenLens[CounterAppModel](_.counterStore)), initialState.counterStore)
 
   Platform.runLater(new Runnable() {
     override def run(): Unit = {
@@ -182,16 +181,39 @@ object CounterApp extends App {
     def init(context: ContextMapper[A#ModelType]): () => A
   }
 
-  val serviceSubscriber: (Action, Map[String, _ <: BaseModel], Map[String, _ <: BaseModel]) => Map[String, _ <: BaseModel] = { (action, _, _ ) =>
+  val serviceSubscriber: (Action, Map[String, _ <: BaseModel], Map[String, _ <: BaseModel]) => Map[String, _ <: BaseModel] = { (action, _, model) =>
 
+    // Map wich contains all the updated models of which are both in the Repository and the model
+    // We eliminated all models which are missing in Repository
+    val newModel = model.filter { case (serviceName, service) => Repository.sers.contains(serviceName) } map { case (serviceName, serviceState) =>
+      Repository.sers(serviceName).apply() match {
+        case (context, component: Component[_]) =>
+          println("Ez egy component")
+          val res = context.chain.update(action, serviceState)
+          serviceName -> res
+          ???
+        case _ => throw new IllegalStateException("This is not a Component type service")
+      }
+    } toList
+
+    //Map which are in the repository but not in the model
+    val m = Map(Repository.sers.toList: _*).filter { case (serviceName, serviceAccessor) => !model.contains(serviceName) }.map { case (serviceName, serviceAccessor) =>
+      serviceAccessor() match {
+        case (_, component: Component[_]) => serviceName -> component.initialState
+        case _ => throw new IllegalStateException("This is not a Component type service")
+      }
+    } toList
+
+    val result = (newModel ++ m).toMap
+    result
   }
 
-  val servicesContext = context.map(GenLens[CounterAppModel](_.services))
-  servicesContext(serviceSubscriber)
+  val servicesContextMapper = context.map(GenLens[CounterAppModel](_.services))
+  val serviceContext = servicesContextMapper(serviceSubscriber)
 
   object Repository {
     private[CounterApp] val services = scala.collection.mutable.HashMap.empty[String, BaseComponent]
-    private[CounterApp] val sers = scala.collection.mutable.HashMap.empty[String, () => _ <: BaseComponent]
+    private[CounterApp] val sers = scala.collection.mutable.HashMap.empty[String, () => (Context[_ <: BaseModel], _ <: BaseComponent)]
 
     def ser[A <: BaseComponent : Manifest : ServiceBuilder]: A = {
       val m = manifest[A]
@@ -201,7 +223,11 @@ object CounterApp extends App {
       sers.getOrElse(serviceName, {
         val sb = implicitly[ServiceBuilder[A]]
         val serviceContext = new Context[A#ModelType] {
-          override def changes: Observable[A#ModelType] = context.changes.map {_.services}.filter {_.contains(serviceName)}.map{ in => in(serviceName).asInstanceOf[A#ModelType]}
+          override def changes: Observable[A#ModelType] = context.changes.map {
+            _.services
+          }.filter {
+            _.contains(serviceName)
+          }.map { in => in(serviceName).asInstanceOf[A#ModelType] }
 
           override def chain: UpdateChain[A#ModelType] = UpdateChain[A#ModelType]
 
@@ -209,9 +235,10 @@ object CounterApp extends App {
 
           override def backgroundExecutor: ExecutionContext = context.backgroundExecutor
         }
-        sers(serviceName) = sb.init(serviceContext.mapper)
+        val r = { () => (serviceContext.asInstanceOf[Context[BaseModel]], sb.init(serviceContext.mapper).apply()) }
+        sers(serviceName) = r
         sers(serviceName)
-      }).apply().asInstanceOf[A]
+      }).apply()._2.asInstanceOf[A]
     }
 
     def service[A: Manifest]: A = {
@@ -219,7 +246,7 @@ object CounterApp extends App {
 
       val foundService = for {
         found <- services.find { case (name, service) => mf.runtimeClass.isInstance(service) }
-      } yield(found._2.asInstanceOf[A])
+      } yield (found._2.asInstanceOf[A])
 
       if (foundService.isEmpty) throw new IllegalStateException(s"Service not found by type: ${mf.runtimeClass.getName}")
 

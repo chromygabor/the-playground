@@ -11,7 +11,7 @@ import rx.lang.scala.{Observer, Subscriber}
 
 case class CounterModel(value: Int = 0, buttonEnabled: Boolean = true, uid: Uid = Uid()) extends Model[Counter]
 
-class Counter(protected val contextMapper: ContextMapper[CounterModel], protected val initialState: CounterModel) extends Component[CounterModel] {
+class Counter(protected val contextMapper: ContextMapper[CounterModel], val initialState: CounterModel) extends Component[CounterModel] {
 
   //val counterStore = Repository.service[CounterStore]
   val counterStore = Repository.ser[CounterStore]

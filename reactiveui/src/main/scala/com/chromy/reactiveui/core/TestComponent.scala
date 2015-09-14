@@ -1,10 +1,11 @@
 package com.chromy.reactiveui.core
 
-import java.util.concurrent.{Executors, Executor}
+import java.util.concurrent.Executor
 
 import rx.lang.scala.Subject
 import rx.lang.scala.subjects.BehaviorSubject
 
+import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -30,12 +31,6 @@ object TestComponent {
         override val changes = BehaviorSubject[M]
         override val chain: UpdateChain[M] = UpdateChain()
         override val channel = Subject[Action]
-        override def chainExecutor: Executor = new Executor {
-          override def execute(command: Runnable): Unit = command.run()
-        }
-        override def changesExecutor: Executor = new Executor {
-          override def execute(command: Runnable): Unit = command.run()
-        }
 
         val stream = channel.scan(initialState) { (oldState, action) =>
           Try {
@@ -54,6 +49,10 @@ object TestComponent {
         stream.drop(1) subscribe ({ newState =>
           println(s"[$name] - A publishing a change: $newState")
           changes.onNext(newState)
+        })
+
+        override def backgroundExecutor: ExecutionContext = ExecutionContext.fromExecutor(new Executor {
+          override def execute(command: Runnable): Unit = command.run()
         })
       }
       val component = f(context.mapper, initialState)

@@ -17,7 +17,7 @@ case class CountersModel(counters: List[CounterModel] = List(), counterNavigator
 case object Add extends Action
 
 
-class Counters(protected val contextMapper: ContextMapper[CountersModel], protected val initialState: CountersModel) extends Component[CountersModel] {
+class Counters(protected val contextMapper: ContextMapper[CountersModel], val initialState: CountersModel) extends Component[CountersModel] {
 
   override def update(model: ModelType) = Simple {
     case Add =>

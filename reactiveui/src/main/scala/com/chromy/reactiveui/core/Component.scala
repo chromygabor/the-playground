@@ -6,10 +6,6 @@ import rx.lang.scala.{Observer, Scheduler => ScalaScheduler, Subscriber}
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
 
-/**
- * Created by cry on 2015.07.11..
- */
-
 trait BaseModel {
   type Component <: BaseComponent
 
@@ -26,26 +22,12 @@ trait BaseComponent {
   protected[core] def context: Context[ModelType]
 }
 
-trait Updater[+M <: BaseModel] extends PartialFunction[Action, M]
-
-case object Bypass extends Updater[Nothing] {
-  override def isDefinedAt(x: Action): Boolean = false
-
-  override def apply(v1: Action) = ???
-}
-
-case class Simple[M <: BaseModel](f: PartialFunction[Action, M]) extends Updater[M] {
-  override def isDefinedAt(action: Action): Boolean = f.isDefinedAt(action)
-
-  override def apply(action: Action): M = f(action)
-}
-
 trait Component[M <: BaseModel] extends BaseComponent {
   type ModelType = M
 
   protected def contextMapper: ContextMapper[ModelType]
 
-  protected def initialState: ModelType
+  /*protected*/ def initialState: ModelType
 
   protected def update(model: ModelType): Updater[ModelType] = Bypass
 
@@ -81,7 +63,7 @@ trait Component[M <: BaseModel] extends BaseComponent {
     }
   }
 
-  final protected[core] val context = contextMapper(subscriber)
+  final /*protected[core]*/ val context = contextMapper(subscriber)
 
   context.changes.distinctUntilChanged.subscribe(
   { change =>
@@ -90,7 +72,7 @@ trait Component[M <: BaseModel] extends BaseComponent {
   }, { error => _changes.onError(error) }, { () => _changes.onCompleted() }
   )
 
-  final implicit val chainExecutionContext: ExecutionContext = context.backgroundExecutor
+  final protected implicit val chainExecutionContext: ExecutionContext = context.backgroundExecutor
   final val channel: Observer[Action] = context.channel
 
   final def subscribe(subscriber: Subscriber[ModelType]) = {
