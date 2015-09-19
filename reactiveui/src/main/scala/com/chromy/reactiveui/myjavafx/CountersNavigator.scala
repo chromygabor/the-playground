@@ -4,10 +4,9 @@ import javafx.fxml.FXML
 import javafx.scene.control.{Button, Label}
 
 import com.chromy.reactiveui.core._
-import com.chromy.reactiveui.myjavafx.CounterApp.Repository
-import com.chromy.reactiveui.myjavafx.CounterNavigator.{Open, Down, Up}
-import rx.lang.scala.{Observer, Subscriber}
 import com.chromy.reactiveui.core.misc.Utils._
+import com.chromy.reactiveui.myjavafx.CounterNavigator.{Down, Open, Up}
+import rx.lang.scala.{Observer, Subscriber}
 
 /**
  * Created by chrogab on 2015.09.08..
@@ -26,32 +25,38 @@ object CounterNavigator {
 
 class CounterNavigator(val contextMapper: ContextMapper[CounterNavigatorModel], val initialState: CounterNavigatorModel = CounterNavigatorModel()) extends Component[CounterNavigatorModel] {
 
-  //val dialogService = Repository.service[DialogService]
+  val dialogService = CounterApp.service[DialogService]
+
+  def firstAvailable(actual: Option[(Uid, CounterStore.CounterState)]): Option[(Uid, CounterStore.CounterState)] = ???
 
   override protected def update(model: ModelType): Updater[ModelType] = Simple {
-    case CounterStore.Changed(stateAccessor) => model.actual match {
-      case None => stateAccessor.first match {
-        case None => model
-        case Some((uid, counterState)) => model.copy(actual = Some((uid, counterState)))
+    case CounterStore.Changed(stateAccessor) =>
+      model.actual match {
+        case None =>
+          model.copy(actual = stateAccessor.firstAvailable(None))
+        case Some((uid, counterState)) => stateAccessor(uid) match {
+          case None =>
+            model.copy(actual = stateAccessor.firstAvailable(model.actual))
+          case state@Some(_) =>
+            model.copy(actual = state)
+        }
       }
-      case Some((uid, counterState)) => stateAccessor(uid) match {
-        case None => model
-        case state@Some(_) => model.copy(actual = state)
-      }
-    }
-    case Up(model.uid) => (for {
-      (uid, counterState) <- model.actual if (counterState.hasNext)
-    } yield model.copy(actual = counterState.next)) getOrElse model
-    case Down(model.uid) => (for {
-      (uid, counterState) <- model.actual if (counterState.hasPrev)
-    } yield model.copy(actual = counterState.prev)) getOrElse model
+    case Up(model.uid) =>
+      (for {
+        (uid, counterState) <- model.actual if (counterState.hasNext)
+      } yield model.copy(actual = counterState.next)) getOrElse model
+    case Down(model.uid) =>
+      (for {
+        (uid, counterState) <- model.actual if (counterState.hasPrev)
+      } yield model.copy(actual = counterState.prev)) getOrElse model
 
     case Open(model.uid) =>
+      dialogService.open[CounterNavigatorDialog](model.uid)
       model
   }
 }
 
-class CounterNavigatorController extends GenericJavaFXModule[CounterNavigator] {
+class CounterNavigatorController extends GenericJavaFXModule[CounterNavigator] with DialogServiceController {
   @FXML private var _bNext: Button = _
   lazy val bNext = _bNext
 
@@ -60,6 +65,8 @@ class CounterNavigatorController extends GenericJavaFXModule[CounterNavigator] {
 
   @FXML private var _lValue: Label = _
   lazy val lValue = _lValue
+
+  private var _component: Component = _
 
   def subscriber(channel: Observer[Action]): Subscriber[CounterNavigatorModel] = new Subscriber[CounterNavigatorModel]() {
     override def onNext(model: CounterNavigatorModel): Unit = {
@@ -87,9 +94,7 @@ class CounterNavigatorController extends GenericJavaFXModule[CounterNavigator] {
     override def onCompleted(): Unit = super.onCompleted()
   }
 
-  private var _component: Component = _
-
-  override def dispatch(component: Component): Component = {
+  override protected def dispatch(component: Component): Component = {
     _component = component
     _component.subscribe(subscriber(_component.channel))
     _component
