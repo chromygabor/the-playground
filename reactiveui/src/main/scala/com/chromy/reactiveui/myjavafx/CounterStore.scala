@@ -1,33 +1,25 @@
 package com.chromy.reactiveui.myjavafx
 
 import com.chromy.reactiveui.core._
-import com.chromy.reactiveui.myjavafx.CounterApp.ServiceBuilder
 import com.chromy.reactiveui.myjavafx.CounterStore._
+import rx.lang.scala.Subscriber
+import com.chromy.reactiveui._
 
 import scala.collection.immutable.ListMap
 
 /**
  * Created by chrogab on 2015.09.03..
  */
-case class CounterStoreModel(counters: ListMap[Uid, Int] = ListMap(), uid: Uid = Uid()) extends Model[CounterStore]
 
 object CounterStore {
 
-  implicit object Builder extends ServiceBuilder[CounterStore] {
-    private[this] var _instance = Option.empty[CounterStore]
-
-    override def init(context: ContextMapper[CounterStoreModel]): () => CounterStore = {
-      if (_instance.isEmpty) {
-        _instance = Some(new CounterStore(context, CounterStoreModel()))
-      }
-      { () => _instance.get }
-    }
-  }
+  case class Model(counters: ListMap[Uid, Int] = ListMap(), uid: Uid = Uid()) extends core.Model[CounterStore]
 
   trait CounterState {
     val value: Int
     val hasPrev: Boolean
     val hasNext: Boolean
+    val index: Int
 
     def next: Option[(Uid, CounterState)]
 
@@ -35,10 +27,11 @@ object CounterStore {
   }
 
   object CounterState {
-    def apply(iValue: Int, iHasNext: Boolean, iHasPrev: Boolean, iNext: => Option[(Uid, CounterState)], iPrev: => Option[(Uid, CounterState)]): CounterState = new CounterState {
+    def apply(iValue: Int, iIndex: Int, iHasNext: Boolean, iHasPrev: Boolean, iNext: => Option[(Uid, CounterState)], iPrev: => Option[(Uid, CounterState)]): CounterState = new CounterState {
       override val value: Int = iValue
       override val hasPrev: Boolean = iHasPrev
       override val hasNext: Boolean = iHasNext
+      override val index: Int = iIndex
 
       override def prev: Option[(Uid, CounterState)] = iPrev
 
@@ -47,7 +40,7 @@ object CounterStore {
   }
 
   trait CounterStateAccessor {
-    def first: Option[(Uid, CounterState)]
+    def firstAvailable(actual: Option[(Uid, CounterState)]): Option[(Uid, CounterState)]
 
     def apply(uid: Uid): Option[(Uid, CounterState)]
   }
@@ -57,7 +50,7 @@ object CounterStore {
 }
 
 
-class CounterStore(protected val contextMapper: ContextMapper[CounterStoreModel], protected val initialState: CounterStoreModel) extends Component[CounterStoreModel] {
+class CounterStore(protected val contextMapper: ContextMapper[CounterStore.Model], protected val initialState: CounterStore.Model) extends Component[CounterStore.Model] {
   private[this] def stateAccessor(counters: ListMap[Uid, Int]): CounterStateAccessor = {
     val indexedCounters = counters.zipWithIndex.map { case ((uid, value), index) => uid ->(value, index) } toMap
 
@@ -71,6 +64,7 @@ class CounterStore(protected val contextMapper: ContextMapper[CounterStoreModel]
         lazy val prevState = oPrevUid.flatMap { case (uid, (_, _)) => createState(uid) }
 
         (iUid, CounterState(value,
+          index,
           oNextUid.isDefined,
           oPrevUid.isDefined,
           nextState,
@@ -79,17 +73,31 @@ class CounterStore(protected val contextMapper: ContextMapper[CounterStoreModel]
       }
 
     new CounterStateAccessor {
-      override def first: Option[(Uid, CounterState)] = for {
-        (uid, (_, _)) <- indexedCounters.find { case (_, (_, index)) => index == 0 }
-        counterState <- createState(uid)
-      } yield counterState
+      override def firstAvailable(actual: Option[(Uid, CounterState)]): Option[(Uid, CounterState)] = actual match {
+        case None =>
+          for {
+            (uid, (_, _)) <- indexedCounters.find { case (_, (_, index)) => index == 0 }
+            counterState <- createState(uid)
+          } yield counterState
+        case Some((_, counterState)) =>
+          (for {
+            (uid, (_, _)) <- indexedCounters.find { case (_, (_, index)) => index == counterState.index - 1  }
+            newCounterState <- createState(uid)
+          } yield newCounterState) match {
+            case s: Some[_] => s
+            case None => for {
+              (uid, (_, _)) <- indexedCounters.find { case (_, (_, index)) => index == 0 }
+              counterState <- createState(uid)
+            } yield counterState
+          }
+      }
 
       override def apply(uid: Uid): Option[(Uid, CounterState)] = createState(uid)
     }
   }
 
   private[this] def update(uid: Uid, f: Int => Int): Unit = {
-    val update: (Uid, CounterStoreModel) => CounterStoreModel = {
+    val update: (Uid, CounterStore.Model) => CounterStore.Model = {
       case (uid, model) =>
         val newCounters = if (model.counters.contains(uid)) {
           val newValue = f(model.counters(uid))
@@ -117,5 +125,18 @@ class CounterStore(protected val contextMapper: ContextMapper[CounterStoreModel]
   def decrement(uid: Uid): Unit = {
     update(uid, _ - 1)
   }
+
+  def remove(uid: Uid) = {
+    val update: (Uid, CounterStore.Model) => CounterStore.Model = { case (uid, model) =>
+
+      val newCounters = model.counters - uid
+
+      channel.onNext(CounterStore.Changed(stateAccessor(newCounters)))
+      model.copy(counters = newCounters)
+    }
+    channel.onNext(Defer(uid, update))
+
+  }
+
 
 }
