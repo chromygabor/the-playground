@@ -15,7 +15,7 @@ import scala.concurrent.ExecutionContext
  */
 
 object ListComponentOf {
-  def apply[A <: BaseComponent{type ModelType <: BaseModel}](iContextMapper: ContextMapper[List[A#ModelType]])(iCreate: (ContextMapper[A#ModelType], A#ModelType) => A): ListComponentOf[A] = {
+  def apply[A <: UiComponent](iContextMapper: ContextMapper[List[A#ModelType]])(iCreate: (ContextMapper[A#ModelType], A#ModelType) => A): ListComponentOf[A] = {
     val listComponentOf = new ListComponentOf[A] {
       override def contextMapper = iContextMapper
 
@@ -29,7 +29,7 @@ object ListComponentOf {
  * ListComponentOf
  * @tparam A
  */
-trait ListComponentOf[A <: BaseComponent {type ModelType <: BaseModel}] extends BaseComponent {
+trait ListComponentOf[A <: UiComponent] extends SimpleComponent {
 
   type ComponentType = A
   type ComponentModel = ComponentType#ModelType
@@ -38,7 +38,6 @@ trait ListComponentOf[A <: BaseComponent {type ModelType <: BaseModel}] extends 
   protected def contextMapper: ContextMapper[List[ComponentModel]]
 
   protected def create: (ContextMapper[ComponentModel], ComponentModel) => ComponentType
-
 
   private lazy val name = s"ListComponentOf"
   println(s"[$name] created with")
@@ -80,6 +79,7 @@ trait ListComponentOf[A <: BaseComponent {type ModelType <: BaseModel}] extends 
         case Some(insertedIndex) =>
           MoveItem(component, removedIndex, computedIndex, insertedIndex)
         case _ =>
+          childrenComponents = childrenComponents - item.uid
           DeleteItem(component, removedIndex, computedIndex)
       }
     }
@@ -135,16 +135,14 @@ trait ListComponentOf[A <: BaseComponent {type ModelType <: BaseModel}] extends 
   }
 
   def subscribe(subscriber: Subscriber[List[Operation[ComponentType]]]) = {
-    context.changes.subscribe(subscriber)
+    context.changes.distinctUntilChanged.filter(!_.isEmpty).subscribe(subscriber)
   }
 }
 
-sealed trait Operation[M] extends Model[ListComponentOf[_]] {
-  override val uid = Uid()
-}
+sealed trait Operation[M <: UiComponent]
 
-case class DeleteItem[M](item: M, originalIndex: Int, computedIndex: Int) extends Operation[M]
+case class DeleteItem[M <: UiComponent](item: M, originalIndex: Int, computedIndex: Int) extends Operation[M]
 
-case class AddItem[M](item: M, index: Int) extends Operation[M]
+case class AddItem[M <: UiComponent](item: M, index: Int) extends Operation[M]
 
-case class MoveItem[M](item: M, originalIndex: Int, computedIndex: Int, newIndex: Int) extends Operation[M]
+case class MoveItem[M <: UiComponent](item: M, originalIndex: Int, computedIndex: Int, newIndex: Int) extends Operation[M]
