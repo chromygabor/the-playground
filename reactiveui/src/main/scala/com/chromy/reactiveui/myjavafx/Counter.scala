@@ -5,21 +5,29 @@ import javafx.scene.control.{Button, Label}
 
 import com.chromy.reactiveui.core._
 import com.chromy.reactiveui.core.misc.Utils._
-import com.chromy.reactiveui.myjavafx.CounterApp.Repository
+import com.chromy.reactiveui.myjavafx.Counter._
 import rx.lang.scala.{Observer, Subscriber}
 
 
 case class CounterModel(value: Int = 0, buttonEnabled: Boolean = true, uid: Uid = Uid()) extends Model[Counter]
 
+object Counter {
+  case class Increment(id: Uid) extends Action
+  case class Decrement(id: Uid) extends Action
+  case class Close(id: Uid) extends Action
+  case class Removed(id: Uid) extends Action
+}
+
 class Counter(protected val contextMapper: ContextMapper[CounterModel], val initialState: CounterModel) extends Component[CounterModel] {
 
-  //val counterStore = Repository.service[CounterStore]
-  val counterStore = Repository.ser[CounterStore]
+  val counterStore = CounterApp.service[CounterStore]
 
   counterStore.create(initialState.uid)
 
   override def update(model: ModelType) = Simple {
     case Close(model.uid) =>
+      counterStore.remove(model.uid)
+      channel.onNext(Removed(uid))
       model
     case Increment(model.uid) =>
       counterStore.increment(model.uid)
@@ -35,13 +43,6 @@ class Counter(protected val contextMapper: ContextMapper[CounterModel], val init
   override def toString = s"Counter(${initialState.uid})"
 
 }
-
-case class Incremented(id: Uid) extends Action
-case class Increment(id: Uid) extends Action
-
-case class Decrement(id: Uid) extends Action
-
-case class Close(id: Uid) extends Action
 
 class CounterController extends GenericJavaFXModule[Counter] {
   @FXML private var _lblCounter: Label = _
