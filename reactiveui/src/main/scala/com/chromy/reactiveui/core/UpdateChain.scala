@@ -4,7 +4,8 @@ import java.util.concurrent.atomic.AtomicReference
 
 import monocle._
 
-import scala.collection.mutable.{HashMap => MMap, WeakHashMap}
+import scala.collection.mutable
+import scala.collection.mutable.{HashMap => MMap, WeakHashMap => WMap}
 
 /**
  * Created by cry on 2015.07.04..
@@ -12,7 +13,7 @@ import scala.collection.mutable.{HashMap => MMap, WeakHashMap}
 trait UpdateChain[T] {
 
   private[this] val _subscribersLock: Object = new Object()
-  private[this] val _subscribers: WeakHashMap[((Action, T, T) => T), Int] = WeakHashMap()
+  private[this] val _subscribers: WMap[((Action, T, T) => T), Int] = WMap()
 
   private[this] def subscribers: List[(Action, T, T) => T] = {
     var newSubscribers:List[((Action, T, T) => T)]  = null
