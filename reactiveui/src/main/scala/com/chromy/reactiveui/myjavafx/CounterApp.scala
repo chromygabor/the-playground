@@ -8,13 +8,15 @@ import javafx.scene.{Parent, Scene}
 import javafx.stage.Stage
 
 import com.chromy.reactiveui.core._
+import com.chromy.reactiveui.myjavafx.CounterNavigatorDialog
 import monocle.macros.GenLens
 import rx.lang.scala.schedulers.IOScheduler
 import rx.lang.scala.subjects.BehaviorSubject
 import rx.lang.scala.{Observable, Observer, Scheduler => ScalaScheduler, Subject}
 import rx.schedulers.Schedulers
+import scala.collection.mutable.{HashMap => MMap, WeakHashMap => WMap}
 
-import scala.annotation.implicitNotFound
+
 import scala.concurrent.ExecutionContext
 import scala.util.Try
 
@@ -22,6 +24,41 @@ import scala.util.Try
 /**
  * Created by chrogab on 2015.06.04..
  */
+
+trait ServiceBuilder[A <: BaseComponent] {
+  def apply(context: Context[A#ModelType]): (A#ModelType, A)
+}
+
+object Singleton {
+  def apply[A <: ComponentModel](initialState: A)(create: (ContextMapper[A], A) => A#ComponentType): ServiceBuilder[A#ComponentType] = new ServiceBuilder[A#ComponentType] {
+    private[this] var _instance = Option.empty[A#ComponentType]
+    type ModelType = A
+    type ComponentType = A#ComponentType
+
+    override def apply(context: Context[A#ComponentType#ModelType]): (A#ComponentType#ModelType, A#ComponentType) = {
+      (initialState.asInstanceOf[A#ComponentType#ModelType], _instance.getOrElse {
+        val component = create(context.mapper.asInstanceOf[ContextMapper[A]], initialState)
+        _instance = Some(component)
+        _instance.get
+      })
+    }
+  }
+}
+
+object Services {
+
+  lazy val app = (context: ContextMapper[CountersModel], initialState: CountersModel) => JavaFXModule[CountersController](context, initialState)
+
+  lazy val dialogs = Map(
+    classOf[CounterNavigatorDialog] -> classOf[CounterNavigatorDialog]
+  )
+
+  lazy val services = Map(
+    "app" -> Singleton(CountersModel()) { (contextMapper, initialState) => new Counters(contextMapper, initialState) },
+    "com.chromy.reactiveui.myjavafx.CounterStore" -> Singleton(CounterStore.Model()) { (contextMapper, initialState) => new CounterStore(contextMapper, initialState) },
+    "com.chromy.reactiveui.myjavafx.DialogService" -> Singleton(DialogService.Model()) { (contextMapper, initialState) => new DialogService(contextMapper, initialState) }
+  )
+}
 
 object JavaFXScheduler {
 
@@ -37,12 +74,14 @@ object JavaFXScheduler {
 }
 
 
-sealed trait JavaFXModule {
+trait JavaFXModule {
   type Controller
   type Model
   type Component
 
-  def dispatch(component: Component): Component
+  def dispatcher(component: Component): Component = dispatch(component)
+
+  protected def dispatch(component: Component): Component
 }
 
 case class JavaFxModuleWrapper[A <: JavaFXModule](parent: Parent, controller: A, component: A#Component)
@@ -97,14 +136,13 @@ object JavaFXModule {
 
 }
 
-trait GenericJavaFXModule[A <: BaseComponent] extends JavaFXModule {
+abstract class GenericJavaFXModule[A <: BaseComponent] extends JavaFXModule {
   type Controller = this.type
   type Model = A#ModelType
   type Component = A
-
 }
 
-case class CounterAppModel(counters: CountersModel = CountersModel(), services: Map[String, _ <: BaseModel] = Map())
+case class CounterAppModel(counters: CountersModel = CountersModel(), services: Map[String, _ <: ComponentModel] = Map())
 
 object CounterApp extends App {
 
@@ -156,12 +194,8 @@ object CounterApp extends App {
 
   }
 
-
-  //Repository.services("counterStore") = new CounterStore(context.map(GenLens[CounterAppModel](_.counterStore)), initialState.counterStore)
-
   Platform.runLater(new Runnable() {
     override def run(): Unit = {
-
       JavaFXModule[CountersController](context.map(GenLens[CounterAppModel](_.counters)), initialState.counters) match {
         case Success((parent, appController, appComponent)) =>
           _component = appComponent
@@ -176,82 +210,73 @@ object CounterApp extends App {
     }
   })
 
-  @implicitNotFound("Not found ComponentBuilder in scope for ${A}")
-  trait ServiceBuilder[A <: BaseComponent] {
-    def init(context: ContextMapper[A#ModelType]): () => A
-  }
-
-  val serviceSubscriber: (Action, Map[String, _ <: BaseModel], Map[String, _ <: BaseModel]) => Map[String, _ <: BaseModel] = { (action, _, model) =>
+  private[this] val serviceSubscriber: (Action, Map[String, ComponentModel], Map[String, ComponentModel]) => Map[String, ComponentModel] = { (action, _, model) =>
 
     // Map wich contains all the updated models of which are both in the Repository and the model
     // We eliminated all models which are missing in Repository
-    val newModel = model.filter { case (serviceName, service) => Repository.sers.contains(serviceName) } map { case (serviceName, serviceState) =>
-      Repository.sers(serviceName).apply() match {
-        case (context, component: Component[_]) =>
-          println("Ez egy component")
-          val res = context.chain.update(action, serviceState)
-          serviceName -> res
-          ???
-        case _ => throw new IllegalStateException("This is not a Component type service")
+    val nm: List[(String, ComponentModel)] = model.map { case (serviceName, serviceState) =>
+      val oService = services.find {
+        case (_, Service(`serviceName`, _, _, _)) => true
+        case _ => false
       }
-    } toList
+      for {
+        (_, service) <- oService
+      } yield {
+        val newState = service.update(action, serviceState)
+        (serviceName, newState.asInstanceOf[ComponentModel])
+      }
+    }.filter(_.isDefined).map(_.get).toList
 
     //Map which are in the repository but not in the model
-    val m = Map(Repository.sers.toList: _*).filter { case (serviceName, serviceAccessor) => !model.contains(serviceName) }.map { case (serviceName, serviceAccessor) =>
-      serviceAccessor() match {
-        case (_, component: Component[_]) => serviceName -> component.initialState
-        case _ => throw new IllegalStateException("This is not a Component type service")
-      }
-    } toList
+    val m: List[(String, ComponentModel)] = Map(services.toList: _*).filter { case (_, service@Service(serviceName, _, _, _)) => model.get(serviceName).isEmpty }.map { case (_, service@Service(serviceName, _, _, _)) =>
+      val newState = service.update(action, service.initialState).asInstanceOf[ComponentModel]
+      (serviceName, newState)
+    }.toList
 
-    val result = (newModel ++ m).toMap
-    result
+    (nm ++ m).toMap
   }
 
-  val servicesContextMapper = context.map(GenLens[CounterAppModel](_.services))
-  val serviceContext = servicesContextMapper(serviceSubscriber)
+  private[this] val servicesContextMapper = context.map(GenLens[CounterAppModel](_.services))
+  private[this] val serviceContext = servicesContextMapper(serviceSubscriber)
 
-  object Repository {
-    private[CounterApp] val services = scala.collection.mutable.HashMap.empty[String, BaseComponent]
-    private[CounterApp] val sers = scala.collection.mutable.HashMap.empty[String, () => (Context[_ <: BaseModel], _ <: BaseComponent)]
+  private[CounterApp] val services = WMap.empty[BaseComponent, Service[_ <: BaseComponent]]
 
-    def ser[A <: BaseComponent : Manifest : ServiceBuilder]: A = {
-      val m = manifest[A]
 
-      val serviceName = m.runtimeClass.getName
+  def service[A <: BaseComponent : Manifest]: A = {
+    val m = manifest[A]
 
-      sers.getOrElse(serviceName, {
-        val sb = implicitly[ServiceBuilder[A]]
-        val serviceContext = new Context[A#ModelType] {
-          override def changes: Observable[A#ModelType] = context.changes.map {
-            _.services
-          }.filter {
-            _.contains(serviceName)
-          }.map { in => in(serviceName).asInstanceOf[A#ModelType] }
+    val serviceName = m.runtimeClass.getName
 
-          override def chain: UpdateChain[A#ModelType] = UpdateChain[A#ModelType]
-
-          override def channel: Observer[Action] = context.channel
-
-          override def backgroundExecutor: ExecutionContext = context.backgroundExecutor
-        }
-        val r = { () => (serviceContext.asInstanceOf[Context[BaseModel]], sb.init(serviceContext.mapper).apply()) }
-        sers(serviceName) = r
-        sers(serviceName)
-      }).apply()._2.asInstanceOf[A]
+    val oService = services.find {
+      case (_, Service(`serviceName`, _, _, _)) => true
+      case _ => false
+    } map {
+      _._2
     }
 
-    def service[A: Manifest]: A = {
-      val mf = manifest[A]
+    oService.getOrElse {
+      val sb2 = Services.services.getOrElse(serviceName, throw new IllegalArgumentException(s"There is no configured service with name: $serviceName"))
+      if (!sb2.isInstanceOf[ServiceBuilder[A]]) throw new IllegalArgumentException(s"The service was not configured properly (the builder not belonging to the service): $serviceName")
 
-      val foundService = for {
-        found <- services.find { case (name, service) => mf.runtimeClass.isInstance(service) }
-      } yield (found._2.asInstanceOf[A])
+      val sb = sb2.asInstanceOf[ServiceBuilder[A]]
 
-      if (foundService.isEmpty) throw new IllegalStateException(s"Service not found by type: ${mf.runtimeClass.getName}")
+      val serviceContext = new Context[A#ModelType] {
+        override val changes: Observable[A#ModelType] = context.changes.map {
+          _.services
+        }.filter {
+          _.contains(serviceName)
+        }.map { in => in(serviceName).asInstanceOf[A#ModelType] }
 
-      foundService.get
-    }
+        override val chain: UpdateChain[A#ModelType] = UpdateChain[A#ModelType]()
+
+        override val channel: Observer[Action] = context.channel
+
+        override val backgroundExecutor: ExecutionContext = context.backgroundExecutor
+      }
+      val (initialState, service) = sb(serviceContext)
+      services(service) = Service(serviceName, serviceContext, initialState, service)
+      services(service)
+    }.service.asInstanceOf[A]
   }
 
 }
