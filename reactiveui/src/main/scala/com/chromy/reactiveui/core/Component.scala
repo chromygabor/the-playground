@@ -6,28 +6,43 @@ import rx.lang.scala.{Observer, Scheduler => ScalaScheduler, Subscriber}
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
 
-trait BaseModel {
-  type Component <: BaseComponent
 
+trait ComponentModel {
+  type ComponentType <: BaseComponent
+}
+
+trait UiModel extends ComponentModel {
   def uid: Uid
 }
 
-trait Model[C <: BaseComponent] extends BaseModel {
-  type Component = C
+trait Model[C <: UiComponent] extends UiModel {
+  type ComponentType = C
 }
 
-trait BaseComponent {
+trait SimpleComponent {
   type ModelType
 
   protected[core] def context: Context[ModelType]
 }
 
-trait Component[M <: BaseModel] extends BaseComponent {
+trait BaseComponent {
+  type ModelType <: ComponentModel
+
+  protected[core] def context: Context[ModelType]
+}
+
+trait UiComponent extends BaseComponent {
+  type ModelType <: UiModel
+  def uid: Uid
+}
+
+trait Component[M <: UiModel] extends UiComponent {
   type ModelType = M
 
   protected def contextMapper: ContextMapper[ModelType]
 
-  /*protected*/ def initialState: ModelType
+  protected def initialState: ModelType
+  def uid = initialState.uid
 
   protected def update(model: ModelType): Updater[ModelType] = Bypass
 
@@ -63,7 +78,7 @@ trait Component[M <: BaseModel] extends BaseComponent {
     }
   }
 
-  final /*protected[core]*/ val context = contextMapper(subscriber)
+  final protected[core] val context = contextMapper(subscriber)
 
   context.changes.distinctUntilChanged.subscribe(
   { change =>
