@@ -22,7 +22,7 @@ class Counters(protected val contextMapper: ContextMapper[CountersModel], val in
   override def update(model: ModelType) = Simple {
     case Add =>
       model.copy(counters = CounterModel() :: model.counters)
-    case Close(uid) =>
+    case Counter.Removed(uid) =>
       val newCounters = model.counters.filter {
         _.uid != uid
       }
@@ -104,7 +104,7 @@ class CountersController extends GenericJavaFXModule[Counters] {
   override def dispatch(component: Counters): Counters = {
     _component = component
 
-    counterNavigator.dispatch(component.childrenComponents.counterNavigator)
+    counterNavigator.dispatcher(component.childrenComponents.counterNavigator)
 
     _component.subscribe(subscriber(_component.channel))
 
