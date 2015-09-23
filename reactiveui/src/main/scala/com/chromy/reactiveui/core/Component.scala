@@ -1,5 +1,6 @@
 package com.chromy.reactiveui.core
 
+import com.chromy.reactiveui.core.misc.Executable
 import rx.lang.scala.subjects.BehaviorSubject
 import rx.lang.scala.{Observer, Scheduler => ScalaScheduler, Subscriber}
 
@@ -41,17 +42,13 @@ trait Component[M <: UiModel] extends UiComponent {
 
   protected def contextMapper: ContextMapper[ModelType]
 
-  protected def initialState: ModelType
-  def uid = initialState.uid
-
   protected def update(model: ModelType): Updater[ModelType] = Bypass
 
   protected case class Defer[A](result: A, update: (A, ModelType) => ModelType, uid: Uid = initialState.uid) extends Action
 
-  private[this] lazy val _changes = BehaviorSubject[ModelType](initialState)
+  //private[this] lazy val _changes = BehaviorSubject[ModelType](initialState)
 
   final protected lazy val name = s"${this.getClass.getSimpleName}(${initialState.uid})"
-  println(s"[$name] created with $initialState")
 
   final private[this] val subscriber: (Action, ModelType, ModelType) => ModelType = { (action, _, prevState) =>
     //println(s"[$name] a new state was requested for $prevState and $action")
@@ -80,18 +77,33 @@ trait Component[M <: UiModel] extends UiComponent {
 
   final protected[core] val context = contextMapper(subscriber)
 
-  context.changes.distinctUntilChanged.subscribe(
-  { change =>
-    println(s"[$name] new change from parent, rendering: $change")
-    _changes.onNext(change)
-  }, { error => _changes.onError(error) }, { () => _changes.onCompleted() }
-  )
+  protected def initialState = context.initialState
+  def uid = initialState.uid
+
+  println(s"[$name] created with $initialState")
+
+//  val subsciber: (ModelType) => Executable = { change =>
+//    println(s"[$name] new change from parent, rendering: $change")
+//    _changes.onNext(change)
+//
+//  }
+//
+//  context.changes.distinctUntilChanged.subscribe(
+//  { change =>
+//    println(s"[$name] new change from parent, rendering: $change")
+//    _changes.onNext(change)
+//  }, { error => _changes.onError(error) }, { () => _changes.onCompleted() }
+//  )
 
   final protected implicit val chainExecutionContext: ExecutionContext = context.backgroundExecutor
   final val channel: Observer[Action] = context.channel
 
-  final def subscribe(subscriber: Subscriber[ModelType]) = {
-    _changes.distinctUntilChanged.subscribe(subscriber)
+//  final def subscribe(subscriber: Subscriber[ModelType]) = {
+//    _changes.distinctUntilChanged.subscribe(subscriber)
+//  }
+
+  final def subscribe(subscriber: ModelType => Executable) = {
+    context.changes.subscribe(subscriber)
   }
 
 

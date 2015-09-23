@@ -1,36 +1,30 @@
 package com.chromy.reactiveui.myjavafx
 
 import javafx.fxml.FXML
-import javafx.scene.control.{TextField, Label, Button}
+import javafx.scene.control.{Button, TextField}
 
-import com.chromy.reactiveui.core.{UiModel, ContextMapper, Uid, Component}
-import com.chromy.reactiveui.myjavafx.CounterNavigatorDialog.Model
-
-/**
- * Created by chrogab on 2015.09.17..
- */
-
-trait DialogComponent[A <: UiModel] {
-  def stateFromInput[B](in: B): A
-}
+import com.chromy.reactiveui.core._
+import com.chromy.reactiveui.core.misc.Executable
+import com.chromy.reactiveui.core.misc.Utils._
+import com.chromy.reactiveui.myjavafx.CounterNavigatorDialog.Increment
+import rx.lang.scala.Subscriber
 
 object CounterNavigatorDialog {
 
-  case class Input(text: String)
+  case class Model(uid: Uid = Uid(), value: Integer = 0) extends com.chromy.reactiveui.core.Model[CounterNavigatorDialog]
 
-  case class Output(text: String)
+  def input(in: Option[Uid]): CounterNavigatorDialog.Model = CounterNavigatorDialog.Model()
 
-  case class Model(uid: Uid = Uid()) extends com.chromy.reactiveui.core.Model[CounterNavigatorDialog]
-
+  case class Increment(uid: Uid) extends Action
 }
 
-class CounterNavigatorDialog(protected val contextMapper: ContextMapper[CounterNavigatorDialog.Model], protected val initialState: CounterNavigatorDialog.Model) extends Component[CounterNavigatorDialog.Model]
-with DialogComponent[CounterNavigatorDialog.Model] {
-  override def stateFromInput[B](in: B): Model = ???
-
+class CounterNavigatorDialog(protected val contextMapper: ContextMapper[CounterNavigatorDialog.Model]) extends Component[CounterNavigatorDialog.Model]  {
+  override protected def update(model: CounterNavigatorDialog.Model): Updater[CounterNavigatorDialog.Model] = Simple {
+    case Increment(model.uid) => model.copy(value = model.value + 1)
+  }
 }
 
-class CounterNavigatorDialogController extends GenericJavaFXModule[CounterNavigatorDialog] {
+class CounterNavigatorDialogController extends GenericJavaFXController[CounterNavigatorDialog] {
   @FXML private var _bNext: Button = _
   lazy val bNext = _bNext
 
@@ -42,8 +36,16 @@ class CounterNavigatorDialogController extends GenericJavaFXModule[CounterNaviga
 
   private var _component: Component = _
 
+  lazy val subscriber: CounterNavigatorDialog.Model => Executable =  { model => Executable{
+      bNext.setText(model.value.toString)
+      bNext.setOnAction { () => _component.channel.onNext(Increment(model.uid))}
+    }
+  }
+
   override protected def dispatch(component: Component): Component = {
     _component = component
+
+    _component.subscribe(subscriber)
     _component
   }
 }

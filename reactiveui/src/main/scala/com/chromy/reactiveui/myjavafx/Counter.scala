@@ -4,6 +4,7 @@ import javafx.fxml.FXML
 import javafx.scene.control.{Button, Label}
 
 import com.chromy.reactiveui.core._
+import com.chromy.reactiveui.core.misc.Executable
 import com.chromy.reactiveui.core.misc.Utils._
 import com.chromy.reactiveui.myjavafx.Counter._
 import rx.lang.scala.{Observer, Subscriber}
@@ -18,7 +19,7 @@ object Counter {
   case class Removed(id: Uid) extends Action
 }
 
-class Counter(protected val contextMapper: ContextMapper[CounterModel], val initialState: CounterModel) extends Component[CounterModel] {
+class Counter(protected val contextMapper: ContextMapper[CounterModel]) extends Component[CounterModel] {
 
   val counterStore = CounterApp.service[CounterStore]
 
@@ -44,7 +45,7 @@ class Counter(protected val contextMapper: ContextMapper[CounterModel], val init
 
 }
 
-class CounterController extends GenericJavaFXModule[Counter] {
+class CounterController extends GenericJavaFXController[Counter] {
   @FXML private var _lblCounter: Label = _
   @FXML private var _btnIncrement: Button = _
   @FXML private var _btnDecrement: Button = _
@@ -56,28 +57,19 @@ class CounterController extends GenericJavaFXModule[Counter] {
   lazy val btnClose = _btnClose
   private[this] var _component: Counter = _
 
-  def subscriber(channel: Observer[Action]): Subscriber[CounterModel] = new Subscriber[CounterModel]() {
-    override def onNext(model: CounterModel): Unit = {
-      btnIncrement.setDisable(!model.buttonEnabled)
-      btnDecrement.setDisable(!model.buttonEnabled)
+  lazy val subscriber: CounterModel => Executable =  { model => Executable {
+    btnIncrement.setDisable(!model.buttonEnabled)
+    btnDecrement.setDisable(!model.buttonEnabled)
 
-      lblCounter.setText(s"${model.uid} - ${model.value.toString}")
-      btnIncrement.setOnAction { () => channel.onNext(Increment(model.uid)) }
-      btnDecrement.setOnAction { () => channel.onNext(Decrement(model.uid)) }
-      btnClose.setOnAction { () => channel.onNext(Close(model.uid)) }
-    }
-
-    override def onError(error: Throwable): Unit = {
-      println("error:")
-      error.printStackTrace()
-    }
-
-    override def onCompleted(): Unit = super.onCompleted()
-  }
+    lblCounter.setText(s"${model.uid} - ${model.value.toString}")
+    btnIncrement.setOnAction { () => _component.channel.onNext(Increment(model.uid)) }
+    btnDecrement.setOnAction { () => _component.channel.onNext(Decrement(model.uid)) }
+    btnClose.setOnAction { () => _component.channel.onNext(Close(model.uid)) }
+  }}
 
   override def dispatch(component: Counter): Counter = {
     _component = component
-    _component.subscribe(subscriber(component.channel))
+    _component.subscribe(subscriber)
     _component
   }
 }

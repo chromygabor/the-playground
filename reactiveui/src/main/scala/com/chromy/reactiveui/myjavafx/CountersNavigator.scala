@@ -4,6 +4,7 @@ import javafx.fxml.FXML
 import javafx.scene.control.{Button, Label}
 
 import com.chromy.reactiveui.core._
+import com.chromy.reactiveui.core.misc.Executable
 import com.chromy.reactiveui.core.misc.Utils._
 import com.chromy.reactiveui.myjavafx.CounterNavigator.{Down, Open, Up}
 import rx.lang.scala.{Observer, Subscriber}
@@ -23,7 +24,7 @@ object CounterNavigator {
 
 }
 
-class CounterNavigator(val contextMapper: ContextMapper[CounterNavigatorModel], val initialState: CounterNavigatorModel = CounterNavigatorModel()) extends Component[CounterNavigatorModel] {
+class CounterNavigator(val contextMapper: ContextMapper[CounterNavigatorModel]) extends Component[CounterNavigatorModel] {
 
   val dialogService = CounterApp.service[DialogService]
 
@@ -51,12 +52,12 @@ class CounterNavigator(val contextMapper: ContextMapper[CounterNavigatorModel], 
       } yield model.copy(actual = counterState.prev)) getOrElse model
 
     case Open(model.uid) =>
-      dialogService.open[CounterNavigatorDialog](model.uid)
+      dialogService.open[CounterNavigatorDialog](model.uid, CounterNavigatorDialog.Model())
       model
   }
 }
 
-class CounterNavigatorController extends GenericJavaFXModule[CounterNavigator] with DialogServiceController {
+class CounterNavigatorController extends GenericJavaFXController[CounterNavigator] with DialogServiceController {
   @FXML private var _bNext: Button = _
   lazy val bNext = _bNext
 
@@ -68,8 +69,7 @@ class CounterNavigatorController extends GenericJavaFXModule[CounterNavigator] w
 
   private var _component: Component = _
 
-  def subscriber(channel: Observer[Action]): Subscriber[CounterNavigatorModel] = new Subscriber[CounterNavigatorModel]() {
-    override def onNext(model: CounterNavigatorModel): Unit = {
+  lazy val subscriber: CounterNavigatorModel =>  Executable =  { model => Executable {
       val (text, textEnabled, hasPrev, hasNext) = model.actual match {
         case None =>
           (" N/A ", false, false, false)
@@ -79,24 +79,20 @@ class CounterNavigatorController extends GenericJavaFXModule[CounterNavigator] w
       lValue.setText(text)
 
       if (textEnabled) {
-        lValue.setOnMouseClicked(() => channel.onNext(Open(model.uid)))
+        lValue.setOnMouseClicked(() => _component.channel.onNext(Open(model.uid)))
       }
 
       bNext.setDisable(!hasNext)
-      bNext.setOnAction(() => channel.onNext(Up(model.uid)))
+      bNext.setOnAction(() => _component.channel.onNext(Up(model.uid)))
 
       bPrev.setDisable(!hasPrev)
-      bPrev.setOnAction(() => channel.onNext(Down(model.uid)))
+      bPrev.setOnAction(() => _component.channel.onNext(Down(model.uid)))
     }
-
-    override def onError(error: Throwable): Unit = super.onError(error)
-
-    override def onCompleted(): Unit = super.onCompleted()
   }
 
   override protected def dispatch(component: Component): Component = {
     _component = component
-    _component.subscribe(subscriber(_component.channel))
+    _component.subscribe(subscriber)
     _component
   }
 }

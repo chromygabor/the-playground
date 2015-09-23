@@ -5,6 +5,7 @@ import javafx.scene.control.Button
 import javafx.scene.layout.FlowPane
 
 import com.chromy.reactiveui.core._
+import com.chromy.reactiveui.core.misc.Executable
 import com.chromy.reactiveui.core.misc.Utils._
 import monocle.macros.GenLens
 import rx.lang.scala.{Observer, Subscriber}
@@ -17,7 +18,7 @@ case class CountersModel(counters: List[CounterModel] = List(), counterNavigator
 case object Add extends Action
 
 
-class Counters(protected val contextMapper: ContextMapper[CountersModel], val initialState: CountersModel) extends Component[CountersModel] {
+class Counters(protected val contextMapper: ContextMapper[CountersModel]) extends Component[CountersModel] {
 
   override def update(model: ModelType) = Simple {
     case Add =>
@@ -30,8 +31,8 @@ class Counters(protected val contextMapper: ContextMapper[CountersModel], val in
   }
 
   class ChildrenComponents {
-    val counters = ListComponentOf[Counter](context.map(GenLens[CountersModel](_.counters)))((contextMapper, state) => new Counter(contextMapper, state))
-    val counterNavigator = new CounterNavigator(context.map(GenLens[CountersModel](_.counterNavigator)), initialState.counterNavigator)
+    val counters = ListComponentOf[Counter](context.map(GenLens[CountersModel](_.counters)))((contextMapper, state) => new Counter(contextMapper))
+    val counterNavigator = new CounterNavigator(context.map(GenLens[CountersModel](_.counterNavigator)))
   }
 
   val childrenComponents = new ChildrenComponents
@@ -39,7 +40,7 @@ class Counters(protected val contextMapper: ContextMapper[CountersModel], val in
 }
 
 
-class CountersController extends GenericJavaFXModule[Counters] {
+class CountersController extends GenericJavaFXController[Counters] {
 
   @FXML private var _bAdd: Button = _
   lazy val bAdd = _bAdd
@@ -52,18 +53,13 @@ class CountersController extends GenericJavaFXModule[Counters] {
 
   private var _component: Counters = _
 
-  def subscriber(channel: Observer[Action]): Subscriber[CountersModel] = new Subscriber[CountersModel]() {
-    override def onNext(model: CountersModel): Unit = {
-      bAdd.setOnAction { () => channel.onNext(Add) }
+  lazy val subscriber: CountersModel => Executable =  { changes => Executable {
+      bAdd.setOnAction { () => _component.channel.onNext(Add) }
     }
 
-    override def onError(error: Throwable): Unit = super.onError(error)
-
-    override def onCompleted(): Unit = super.onCompleted()
   }
 
-  def listSubscriber = new Subscriber[List[Operation[Counter]]] {
-    override def onNext(changes: List[Operation[Counter]]): Unit = {
+  lazy val listSubscriber: List[Operation[Counter]] => Executable =  { changes => Executable {
 
       val moveItems = changes filter {
         case _: MoveItem[_] => true
@@ -82,7 +78,7 @@ class CountersController extends GenericJavaFXModule[Counters] {
 
       changes foreach {
         case AddItem(component, index) =>
-          JavaFXModule[CounterController](component) match {
+          JavaFXController[CounterController](component) match {
             case Success((parent, controller, _)) =>
               pCounters.getChildren.add(index, parent)
             case Failure(e) =>
@@ -96,9 +92,6 @@ class CountersController extends GenericJavaFXModule[Counters] {
       }
     }
 
-    override def onError(error: Throwable): Unit = super.onError(error)
-
-    override def onCompleted(): Unit = super.onCompleted()
   }
 
   override def dispatch(component: Counters): Counters = {
@@ -106,7 +99,7 @@ class CountersController extends GenericJavaFXModule[Counters] {
 
     counterNavigator.dispatcher(component.childrenComponents.counterNavigator)
 
-    _component.subscribe(subscriber(_component.channel))
+    _component.subscribe(subscriber)
 
     _component.childrenComponents.counters.subscribe(listSubscriber)
     _component

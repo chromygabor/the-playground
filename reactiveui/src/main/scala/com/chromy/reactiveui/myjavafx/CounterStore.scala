@@ -50,7 +50,7 @@ object CounterStore {
 }
 
 
-class CounterStore(protected val contextMapper: ContextMapper[CounterStore.Model], protected val initialState: CounterStore.Model) extends Component[CounterStore.Model] {
+class CounterStore(protected val contextMapper: ContextMapper[CounterStore.Model]) extends Component[CounterStore.Model] {
   private[this] def stateAccessor(counters: ListMap[Uid, Int]): CounterStateAccessor = {
     val indexedCounters = counters.zipWithIndex.map { case ((uid, value), index) => uid ->(value, index) } toMap
 

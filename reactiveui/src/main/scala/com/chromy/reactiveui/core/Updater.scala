@@ -16,3 +16,4 @@ case class Simple[M <: ComponentModel](f: PartialFunction[Action, M]) extends Up
 
   override def apply(action: Action): M = f(action)
 }
+

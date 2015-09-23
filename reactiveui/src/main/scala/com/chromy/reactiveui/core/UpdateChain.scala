@@ -1,10 +1,7 @@
 package com.chromy.reactiveui.core
 
-import java.util.concurrent.atomic.AtomicReference
-
 import monocle._
 
-import scala.collection.mutable
 import scala.collection.mutable.{HashMap => MMap, WeakHashMap => WMap}
 
 /**
