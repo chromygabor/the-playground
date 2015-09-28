@@ -8,7 +8,6 @@ import com.chromy.reactiveui.core._
 import com.chromy.reactiveui.core.misc.Executable
 import com.chromy.reactiveui.core.misc.Utils._
 import monocle.macros.GenLens
-import rx.lang.scala.{Observer, Subscriber}
 
 import scala.util.{Failure, Success}
 
@@ -53,21 +52,24 @@ class CountersController extends GenericJavaFXController[Counters] {
 
   private var _component: Counters = _
 
-  lazy val subscriber: CountersModel => Executable =  { changes => Executable {
-      bAdd.setOnAction { () => _component.channel.onNext(Add) }
-    }
+  lazy val subscriber: CountersModel => Executable = { changes => Executable {
+    bAdd.setOnAction { () => _component.channel.onNext(Add) }
+  }
 
   }
 
-  lazy val listSubscriber: List[Operation[Counter]] => Executable =  { changes => Executable {
+  lazy val listSubscriber: List[Operation[Counter]] => Executable = { changes =>
 
-      val moveItems = changes filter {
-        case _: MoveItem[_] => true
-        case _ => false
-      } map { case in@MoveItem(item, originalIndex, _, _) =>
-        (in, pCounters.getChildren.get(originalIndex))
-      } reverse
+    //This happens on the background thread
+    val moveItems = changes filter {
+      case _: MoveItem[_] => true
+      case _ => false
+    } map { case in@MoveItem(item, originalIndex, _, _) =>
+      (in, pCounters.getChildren.get(originalIndex))
+    } reverse
 
+    //This will happen on the UI thread
+    Executable {
       changes foreach {
         case MoveItem(_, _, computedIndex, _) =>
           pCounters.getChildren.remove(computedIndex)
@@ -91,7 +93,6 @@ class CountersController extends GenericJavaFXController[Counters] {
         pCounters.getChildren.add(newIndex, module)
       }
     }
-
   }
 
   override def dispatch(component: Counters): Counters = {

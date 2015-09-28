@@ -2,7 +2,7 @@ package com.chromy.reactiveui.core.misc
 
 import java.util.concurrent.atomic.AtomicReference
 
-import scala.collection.mutable.{WeakHashMap => WMap}
+import scala.collection.mutable.{WeakHashMap => WMap, Map => MMap}
 
 /**
  * Created by cry on 2015.09.22..
@@ -25,9 +25,9 @@ object Executable {
 
 trait SideChain[T] {
   private[this] val _subscribersLock: Object = new Object()
-  private[this] val _subscribers: WMap[(T => Executable), Int] = WMap()
+  private[this] val _subscribers: MMap[(T => Executable), Int] = WMap()
 
-  private[SideChain] def subscribers: List[(T => Executable)] = {
+  /*private[SideChain]*/ def subscribers: List[(T => Executable)] = {
     var newSubscribers:List[T => Executable]  = null
     _subscribersLock.synchronized {
       newSubscribers = _subscribers.toList.sortBy(_._2).map {
@@ -38,8 +38,9 @@ trait SideChain[T] {
   }
 
   def filter(pred: T => Boolean): SideChain[T] = {
-    val parent = this
+    val myParent = this
     new SideChain[T] {
+      val parent = myParent
       override val update: T => Executable = { in =>
         if(pred(in)) {
           val allSubscribers = subscribers.map(_.apply(in))
@@ -53,9 +54,10 @@ trait SideChain[T] {
   }
 
   def distinctUntilChanged: SideChain[T] = {
-    val parent = this
+    val myParent = this
     new SideChain[T] {
       val lastItem = new AtomicReference[T]()
+      val parent = myParent
 
       override val update: T => Executable = { in =>
         if(lastItem.getAndSet(in) != in) {
@@ -71,8 +73,9 @@ trait SideChain[T] {
   }
 
   def map[B](f: T => B): SideChain[B] = {
-    val parent = this
+    val myParent = this
     new SideChain[B] {
+      val parent = myParent
       override val update: B => Executable = { in =>
         val allSubscribers = subscribers.map(_.apply(in))
         Executable {

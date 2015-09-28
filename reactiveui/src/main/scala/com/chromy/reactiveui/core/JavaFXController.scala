@@ -27,14 +27,14 @@ object JavaFXScheduler {
 trait JavaFXController {
   type Controller
   type Model
-  type Component
+  type Component <: UiComponent
 
   def dispatcher(component: Component): Component = dispatch(component)
 
   protected def dispatch(component: Component): Component
 }
 
-abstract class GenericJavaFXController[A <: BaseComponent] extends JavaFXController {
+abstract class GenericJavaFXController[A <: UiComponent] extends JavaFXController {
   type Controller = this.type
   type Model = A#ModelType
   type Component = A
@@ -56,13 +56,13 @@ object JavaFXController {
 
     Try {
       val clazzName = if (ct.runtimeClass.getSimpleName.endsWith("$")) ct.runtimeClass.getSimpleName.dropRight(1) else ct.runtimeClass.getSimpleName
-      val r = ct.runtimeClass.getResource(s"$clazzName.fxml")
 
       val loader = new FXMLLoader(ct.runtimeClass.getResource(s"$clazzName.fxml"))
 
       val node: Parent = loader.load()
       val controller = loader.getController[M]
       controller.dispatch(component.asInstanceOf[controller.Component])
+      component.context.changes.update(component.context.initialState).run()
       (node, controller, component)
     }
   }
@@ -86,6 +86,7 @@ object JavaFXController {
       val node: Parent = loader.load()
       val controller = loader.getController[M]
       controller.dispatch(component.asInstanceOf[controller.Component])
+      component.context.changes.update(component.context.initialState).run()
       (node, controller, component)
     }
   }

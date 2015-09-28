@@ -4,7 +4,7 @@ package com.chromy.reactiveui.core
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicReference
 
-import com.chromy.reactiveui.core.misc.{Executable, ListDiff}
+import com.chromy.reactiveui.core.misc.{SideChain, Executable, ListDiff}
 import rx.lang.scala.{Scheduler => ScalaScheduler, _}
 import rx.schedulers.Schedulers
 
@@ -113,7 +113,11 @@ trait ListComponentOf[A <: UiComponent] extends SimpleComponent {
 
   def createComponent(item: ComponentModel): ComponentType = {
     create(new Context[ComponentModel] {
-      override val changes = myChanges.filter {_.contains(item.uid)} map { change => change(item.uid)}
+      override val changes = myChanges.filter {
+        _.contains(item.uid)
+      } map { change =>
+        change(item.uid)
+      }
       override val chain: UpdateChain[ComponentModel] = UpdateChain[ComponentModel]
       override val channel: Observer[Action] = myContext.channel
       override val backgroundExecutor = myContext.backgroundExecutor
@@ -123,21 +127,21 @@ trait ListComponentOf[A <: UiComponent] extends SimpleComponent {
 
   val context = {
     new Context[ModelType] {
-      override def changes = myContext.changes.map { _ => queue.poll() }
+      override val changes: SideChain[ModelType] = myContext.changes.map { _ =>
+        queue.poll()
+      }.filter(_ != null).distinctUntilChanged
+
       override def chain: UpdateChain[ModelType] = {
         throw new IllegalStateException("This shouldn't be called because never registered")
       }
-      override def channel: Observer[Action] = myContext.channel
+      override val channel: Observer[Action] = myContext.channel
       override val backgroundExecutor = myContext.backgroundExecutor
       override val initialState = Nil
     }
   }
 
-//  def subscribe(subscriber: Subscriber[List[Operation[ComponentType]]]) = {
-//    context.changes.distinctUntilChanged.filter(!_.isEmpty).subscribe(subscriber)
-//  }
   def subscribe(subscriber: List[Operation[ComponentType]] => Executable) = {
-    context.changes.distinctUntilChanged.filter(!_.isEmpty).subscribe(subscriber)
+    context.changes.subscribe(subscriber)
   }
 }
 

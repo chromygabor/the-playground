@@ -75,7 +75,6 @@ trait DialogServiceController extends JavaFXController {
 
   private lazy val dialogSubscriber: List[Operation[DialogManifest]] => Executable = { value =>
     Executable {
-      println(s"***************** $value")
       value.filter {
         case e: AddItem[_] => true
         case _ => false
