@@ -8,6 +8,7 @@
       fx:controller="com.chromy.reactiveui.myjavafx.CounterNavigatorDialogController" alignment="CENTER">
     <children>
         <Button fx:id="_bNext" text=" Up "/>
+        <Label fx:id="_lLabel"></Label>
         <TextField fx:id="_lValue" alignment="CENTER" prefWidth="100"/>
         <Button fx:id="_bPrev" text="  Down  "/>
     </children>

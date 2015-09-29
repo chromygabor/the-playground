@@ -96,9 +96,9 @@ class CounterStore(protected val contextMapper: ContextMapper[CounterStore.Model
     }
   }
 
-  private[this] def update(uid: Uid, f: Int => Int): Unit = {
-    val update: (Uid, CounterStore.Model) => CounterStore.Model = {
-      case (uid, model) =>
+  private[this] def update(uid: Option[Uid], f: Int => Int): Unit = {
+    val update: (Option[Uid], CounterStore.Model) => CounterStore.Model = {
+      case (Some(uid), model) =>
         val newCounters = if (model.counters.contains(uid)) {
           val newValue = f(model.counters(uid))
           model.counters.map { case (iUid, iValue) =>
@@ -110,20 +110,28 @@ class CounterStore(protected val contextMapper: ContextMapper[CounterStore.Model
         }
         channel.onNext(CounterStore.Changed(stateAccessor(newCounters)))
         model.copy(counters = newCounters)
+      case (None, model) =>
+        channel.onNext(CounterStore.Changed(stateAccessor(model.counters)))
+        model
     }
+
     channel.onNext(Defer(uid, update))
   }
 
   def create(uid: Uid): Unit = {
-    update(uid, _ + 0)
+    update(Some(uid), _ + 0)
   }
 
   def increment(uid: Uid): Unit = {
-    update(uid, _ + 1)
+    update(Some(uid), _ + 1)
   }
 
   def decrement(uid: Uid): Unit = {
-    update(uid, _ - 1)
+    update(Some(uid), _ - 1)
+  }
+
+  def refresh(): Unit = {
+    update(None, _ + 0  )
   }
 
   def remove(uid: Uid) = {

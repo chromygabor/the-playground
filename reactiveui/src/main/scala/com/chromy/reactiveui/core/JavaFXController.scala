@@ -62,7 +62,7 @@ object JavaFXController {
       val node: Parent = loader.load()
       val controller = loader.getController[M]
       controller.dispatch(component.asInstanceOf[controller.Component])
-      component.context.changes.update(component.context.initialState).run()
+      //component.context.changes.update(component.context.initialState).run()
       (node, controller, component)
     }
   }
@@ -86,7 +86,7 @@ object JavaFXController {
       val node: Parent = loader.load()
       val controller = loader.getController[M]
       controller.dispatch(component.asInstanceOf[controller.Component])
-      component.context.changes.update(component.context.initialState).run()
+      //component.context.changes.update(component.context.initialState).run()
       (node, controller, component)
     }
   }

@@ -88,6 +88,7 @@ trait DialogServiceController extends JavaFXController {
             val node: Parent = loader.load()
             val controller = loader.getController[JavaFXController]
             controller.dispatcher(dialog.component.asInstanceOf[controller.Component])
+            //dialog.component.context.changes.update(dialog.component.context.initialState).run()
 
             val stage = new Stage
             stage.setScene(new Scene(node))

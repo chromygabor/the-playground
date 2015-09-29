@@ -82,28 +82,13 @@ trait Component[M <: UiModel] extends UiComponent {
 
   println(s"[$name] created with $initialState")
 
-//  val subsciber: (ModelType) => Executable = { change =>
-//    println(s"[$name] new change from parent, rendering: $change")
-//    _changes.onNext(change)
-//
-//  }
-//
-//  context.changes.distinctUntilChanged.subscribe(
-//  { change =>
-//    println(s"[$name] new change from parent, rendering: $change")
-//    _changes.onNext(change)
-//  }, { error => _changes.onError(error) }, { () => _changes.onCompleted() }
-//  )
-
   final protected implicit val chainExecutionContext: ExecutionContext = context.backgroundExecutor
   final val channel: Observer[Action] = context.channel
 
-//  final def subscribe(subscriber: Subscriber[ModelType]) = {
-//    _changes.distinctUntilChanged.subscribe(subscriber)
-//  }
 
   final def subscribe(subscriber: ModelType => Executable) = {
     context.changes.subscribe(subscriber)
+    subscriber.apply(initialState).run()
   }
 
 
