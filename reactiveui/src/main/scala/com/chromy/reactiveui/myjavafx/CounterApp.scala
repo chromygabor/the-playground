@@ -71,7 +71,7 @@ object CounterApp extends App with ServiceAware {
 
     println(s"App initialstate: $initialState")
 
-    val stream = channel.observeOn(chainSch).scan((initialState, Nop.asInstanceOf[Action])) { case ((oldState,_), action) =>
+    val stream = channel.observeOn(chainSch).scan(initialState) { case (oldState, action) =>
       Try {
         println(s"=================== [$name] action received  $action ================= on ${Thread.currentThread.getName}")
         println(s"[$name] - An action received in the main loop: $action, updating state $oldState...")
@@ -79,23 +79,21 @@ object CounterApp extends App with ServiceAware {
         println(s"[$name] - result is: $newState")
         newState
       } match {
-        case Success(newState) => (newState, action)
+        case Success(newState) => newState
         case Failure(error) =>
           error.printStackTrace()
-          (oldState, action)
+          oldState
       }
     }
 
-    stream.drop(1).observeOn(chainSch).subscribe({ newStateAction =>
-      println(s"[$name] - A publishing a change: ${newStateAction._1}, belonging to: ${newStateAction._2} on: ${Thread.currentThread().getName}")
-      val r = changes.update(newStateAction._1)
+    stream.drop(1).observeOn(chainSch).subscribe({ newState =>
+      println(s"[$name] - A publishing a change: ${newState} on: ${Thread.currentThread().getName}")
+      val r = changes.update(newState)
       Platform.runLater(new Runnable() {
         override def run(): Unit = {
            r.run()
         }
       })
-
-//      changes.onNext(newState)
     })
   }
 
