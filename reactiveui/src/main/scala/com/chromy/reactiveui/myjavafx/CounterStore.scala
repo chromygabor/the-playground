@@ -6,6 +6,7 @@ import rx.lang.scala.Subscriber
 import com.chromy.reactiveui._
 
 import scala.collection.immutable.ListMap
+import scala.concurrent.Future
 
 /**
  * Created by chrogab on 2015.09.03..
@@ -111,6 +112,7 @@ class CounterStore(protected val contextMapper: ContextMapper[CounterStore.Model
         channel.onNext(CounterStore.Changed(stateAccessor(newCounters)))
         model.copy(counters = newCounters)
     }
+
     channel.onNext(Defer(uid, update))
   }
 
