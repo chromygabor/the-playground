@@ -6,49 +6,76 @@ import java.util.concurrent.atomic.AtomicReference
 import com.chromy.reactiveui.TestUtil._
 import com.chromy.reactiveui.core.misc.{Executable, SideChain}
 import com.chromy.reactiveui.core.{Action, UpdateChain}
+import monocle.Lens
+import monocle.macros.GenLens
 import org.scalatest.FunSpecLike
 import rx.lang.scala.schedulers.{ComputationScheduler, IOScheduler}
 import rx.lang.scala.{Scheduler, Subject, Subscriber}
 import CtxTest._
+import scala.collection.JavaConversions._
 
 /**
  * Created by cry on 2015.07.12..
  */
 
+object TestUtil {
+  case class SubSubModel(value: Int = 0)
+  case class SimpleModel(sub: SubSubModel = SubSubModel())
+
+  case class AddNumber(number: Int) extends Action
+}
+
 object CtxTest {
   trait Ctx[A] {
+
     def !(action: Action) = onAction(action)
 
     protected def onAction(action: Action): Unit
 
     def subscribe(subscriber: A => Executable): Unit
 
-    def addReactor(f: (Action, A, A) => A): Unit
+    def addReactor(f: (Action, A, A) => A): Unit = chain.subscribe(f)
 
-    val chain: UpdateChain[A] = UpdateChain[A]
+    val chain: UpdateChain[A]
 
-    val render: SideChain[A] = SideChain[A]
+    val render: SideChain[A]
+
+    def map[B](lens: Lens[A,B]): Ctx[B] = {
+      val parent = this
+      new Ctx[B] {
+        override protected def onAction(action: Action): Unit = parent.onAction(action)
+
+        override def subscribe(subscriber: (B) => Executable): Unit = parent.subscribe (a => subscriber(lens.get(a)))
+
+        override val chain: UpdateChain[B] = parent.chain.map(lens)
+        override val render: SideChain[B] = parent.render.map(lens.get)
+      }
+    }
+
   }
 
   object ActiveCtx {
     def apply[A](initialState: A, compScheduler: Scheduler, ioScheduler: Scheduler): Ctx[A] = new Ctx[A] {
       private val lastState = new AtomicReference[A](initialState)
 
+      override val chain: UpdateChain[A] = UpdateChain()
+      override val render: SideChain[A] = SideChain[A]
+
       private[this] val s = Subject[Action]
-      private[this] val r = Subject[Executable]
       private[this] val subscribeQueue = new ConcurrentLinkedQueue[Executable]()
 
       s.observeOn(compScheduler).map { action =>
         val newState = chain.update(action, lastState.get)
         lastState.set(newState)
         newState
-      }.observeOn(compScheduler).foreach { newState =>
-        val executables = subscribeQueue.
-        val sideEffect = render.update(newState)
-        r.onNext(sideEffect)
-      }
+      }.observeOn(compScheduler).map { newState =>
+        val res = render.update(newState)
 
-      r.observeOn(ioScheduler).subscribe(new Subscriber[Executable]() {
+        Executable {
+          subscribeQueue.iterator.toList.foreach(_.run())
+          res.run()
+        }
+      }.observeOn(ioScheduler).subscribe(new Subscriber[Executable]() {
         override def onNext(sideEffect: Executable): Unit = {
           sideEffect.run()
         }
@@ -64,15 +91,14 @@ object CtxTest {
 
       override def subscribe(subscriber: (A) => Executable): Unit = {
         render.subscribe(subscriber)
-        r onNext Executable {
-          val actual = lastState.get
+        val actual = lastState.get
+        subscribeQueue offer Executable {
           if (actual != null) {
             subscriber(actual).run()
           }
         }
       }
 
-      override def addReactor(f: (Action, A, A) => A): Unit = chain.subscribe(f)
     }
   }
 
@@ -89,9 +115,16 @@ class ContextTest extends FunSpecLike {
     }
   }
 
+  val updateSubSub: (Action, SubSubModel, SubSubModel) => SubSubModel = { (action, _, model) =>
+    action match {
+      case AddNumber(number) => model.copy(value = model.value + number)
+      case _ => model
+    }
+  }
+
 
   describe("Context") {
-    it("should be able to be created and store actual state and on subscribe it should be promoted") {
+    ignore("should be able to be created and store actual state and on subscribe it should be promoted") {
 
       val atomicState = new AtomicReference[SimpleModel]()
 
@@ -107,18 +140,32 @@ class ContextTest extends FunSpecLike {
 
       ctx.subscribe { input =>
         Executable {
+          println(s"SideEffect: $input")
           atomicState.set(input)
         }
       }
-      //subscribeExecutable.run()
-      Thread.sleep(100)
-
-      assert(atomicState.get == SimpleModel(SubSubModel(40)))
-      Thread.sleep(100)
 
       ctx ! AddNumber(30)
+    }
+
+    it("should be able be mapped through a lens") {
+      val ctx = ActiveCtx(SimpleModel(), ComputationScheduler(), IOScheduler())
+      val newContext = ctx.map(GenLens[SimpleModel](_.sub))
+
+      newContext.addReactor(updateSubSub)
+
+      ctx ! AddNumber(10)
+      ctx ! AddNumber(30)
       Thread.sleep(100)
-      assert(atomicState.get ==SimpleModel(SubSubModel(70)))
+
+      ctx.subscribe { input =>
+        Executable {
+          println(s"SideEffect: $input")
+        }
+      }
+
+      ctx ! AddNumber(30)
+
     }
   }
 }
