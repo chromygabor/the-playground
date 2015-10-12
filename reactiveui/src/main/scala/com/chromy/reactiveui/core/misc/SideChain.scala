@@ -13,13 +13,30 @@ trait Executable {
   def run(): Unit
 
   def errors: List[Throwable]
+
+  def append(subscriber: () => Executable): Executable = {
+    Try {
+      subscriber()
+    } match {
+      case Success(executable) => Executable({ run(); executable.run()}, errors)
+      case Failure(t) => Executable(run(), t :: errors)
+    }
+  }
 }
 
 object Executable {
-  def apply(f: => Unit) = new Executable {
+  def apply(): Executable = apply( {} )
+
+  def apply(f: => Unit): Executable = new Executable {
     override def run(): Unit = f
 
     override val errors = List.empty[Throwable]
+  }
+
+  def apply(f: => Unit, iErrors: List[Throwable]): Executable = new Executable {
+    override def run(): Unit = f
+
+    override val errors = iErrors
   }
 
 }
@@ -71,11 +88,11 @@ trait SideChain[T] {
       private val parent = myParent
       override val update: T => Executable = { in =>
         if (pred(in)) {
-          val allSubscribers = subscribers.map(_.apply(in))
-          Executable {
-            allSubscribers.foreach(_.run())
+          subscribers.foldLeft(Executable()) { case (executables, subscriber) =>
+            val s ={ () => subscriber(in) }
+            executables.append(s)
           }
-        } else Executable {}
+        } else Executable()
       }
       parent.subscribe(update)
     }
@@ -89,9 +106,9 @@ trait SideChain[T] {
 
       override val update: T => Executable = { in =>
         if (lastItem.getAndSet(in) != in) {
-          val allSubscribers = subscribers.map(_.apply(in))
-          Executable {
-            allSubscribers.foreach(_.run())
+          subscribers.foldLeft(Executable()) { case (executables, subscriber) =>
+            val s ={ () => subscriber(in) }
+            executables.append(s)
           }
         } else Executable {}
       }
@@ -105,9 +122,9 @@ trait SideChain[T] {
     new SideChain[B] {
       private val parent = myParent
       override val update: B => Executable = { in =>
-        val allSubscribers = subscribers.map(_.apply(in))
-        Executable {
-          allSubscribers.foreach(_.run())
+        subscribers.foldLeft(Executable()) { case (executables, subscriber) =>
+          val s ={ () => subscriber(in) }
+          executables.append(s)
         }
       }
 
@@ -131,27 +148,9 @@ trait SideChain[T] {
 object SideChain {
   def apply[T](): SideChain[T] = new SideChain[T] {
     override val update: T => Executable = { in =>
-      val init: Executable = Executable()
-      subscribers.foldLeft(init) { case (executables, subscriber) =>
-        Try {
-          subscriber(in)
-        } match {
-          case Success(executable) => new Executable {
-            override def run(): Unit = {
-              executables.run()
-              executable.run
-            }
-
-            override def errors: List[Throwable] = errors
-          }
-          case Failure(t) => new Executable {
-            override def run(): Unit = {
-              executables.run()
-            }
-
-            override def errors: List[Throwable] = t :: errors
-          }
-        }
+      subscribers.foldLeft(Executable()) { case (executables, subscriber) =>
+        val s ={ () => subscriber(in) }
+        executables.append(s)
       }
     }
   }

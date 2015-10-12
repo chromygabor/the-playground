@@ -5,7 +5,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 import com.chromy.reactiveui.TestUtils._
 import com.chromy.reactiveui.core.misc.{Executable, SideChain}
-import com.chromy.reactiveui.core.{Uid, Action, UpdateChain}
+import com.chromy.reactiveui.core.{Action, Uid, UpdateChain}
 import monocle.Lens
 import monocle.macros.GenLens
 import rx.lang.scala.schedulers.ImmediateScheduler
@@ -36,13 +36,14 @@ object TestUtils {
 }
 
 object CtxTest extends App {
-  sealed trait MapOperation[Uid,V]
 
-  case class Add[Uid,V](uid: Uid, context: Ctx[V]) extends MapOperation[Uid,V]
+  sealed trait MapOperation[Uid, V]
 
-  case class Remove[Uid,V](uid: Uid) extends MapOperation[Uid,V]
+  case class Add[Uid, V](uid: Uid, context: Ctx[V]) extends MapOperation[Uid, V]
 
-  case class Get[Uid,V](uid: Uid) extends MapOperation[Uid,V]
+  case class Remove[Uid, V](uid: Uid) extends MapOperation[Uid, V]
+
+  case class Get[Uid, V](uid: Uid) extends MapOperation[Uid, V]
 
   trait Ctx[A] {
 
@@ -66,16 +67,16 @@ object CtxTest extends App {
 
   }
 
-  type MapCtxModel[Uid,V] = Map[Uid, Ctx[V]]
+  type MapCtxModel[Uid, V] = Map[Uid, Ctx[V]]
 
 
   class CtxApplier[A, B](parent: Ctx[A], lens: Lens[A, B]) {
     def apply(): Ctx[B] = new LensCtx(parent, lens)
 
-    def toMapCtx[Uid, V](f: (MapOperation[Uid, V]) => Ctx[V])(implicit ev: B <:< Map[Uid, V]): Ctx[MapCtxModel[Uid,V]] = {
-      new MapCtx[Map[Uid, V], Uid, V](apply().asInstanceOf[Ctx[Map[Uid,V]]]) {
+    def toMapCtx[Uid, V](f: (MapOperation[Uid, V]) => Ctx[V])(implicit ev: B <:< Map[Uid, V]): Ctx[MapCtxModel[Uid, V]] = {
+      new MapCtx[Map[Uid, V], Uid, V](apply().asInstanceOf[Ctx[Map[Uid, V]]]) {
         override val getContext: (MapOperation[Uid, V]) => Ctx[V] = f
-      }.asInstanceOf[Ctx[MapCtxModel[Uid,V]]]
+      }.asInstanceOf[Ctx[MapCtxModel[Uid, V]]]
     }
 
   }
@@ -111,15 +112,16 @@ object CtxTest extends App {
    */
 
 
-  abstract class MapCtx[B <: Map[Uid, V], Uid, V](parent: Ctx[B]) extends Ctx[MapCtxModel[Uid,V]] {
-    val getContext: MapOperation[Uid,V] => Ctx[V]
+  abstract class MapCtx[B <: Map[Uid, V], Uid, V](parent: Ctx[B]) extends Ctx[MapCtxModel[Uid, V]] {
+    val getContext: MapOperation[Uid, V] => Ctx[V]
 
-    override val lastItem: AtomicReference[MapCtxModel[Uid,V]] = new AtomicReference[MapCtxModel[Uid,V]]()
-    override def chain: UpdateChain[MapCtxModel[Uid,V]] = throw new IllegalAccessException("This context doesn't have update chain")
+    override val lastItem: AtomicReference[MapCtxModel[Uid, V]] = new AtomicReference[MapCtxModel[Uid, V]]()
 
-    override val render: SideChain[MapCtxModel[Uid,V]] = SideChain[MapCtxModel[Uid,V]]()
+    override def chain: UpdateChain[MapCtxModel[Uid, V]] = throw new IllegalAccessException("This context doesn't have update chain")
 
-    override def subscribe(subscriber: MapCtxModel[Uid,V] => Executable): Unit = render.subscribe(subscriber)
+    override val render: SideChain[MapCtxModel[Uid, V]] = SideChain[MapCtxModel[Uid, V]]()
+
+    override def subscribe(subscriber: MapCtxModel[Uid, V] => Executable): Unit = render.subscribe(subscriber)
 
     override def onAction(action: Action): Unit = parent onAction action
 
@@ -142,15 +144,25 @@ object CtxTest extends App {
 
         override val chain: UpdateChain[V] = UpdateChain()
 
-        override def lastItem: AtomicReference[V] = new AtomicReference(initialState)
+        override val lastItem: AtomicReference[V] = new AtomicReference(initialState)
 
         override def subscribe(subscriber: V => Executable): Unit = {
           render.subscribe(subscriber)
         }
 
-        override def render: SideChain[V] = parent.render.map {in =>
-          in(uid).lastItem.get
+        override val render: SideChain[V] = SideChain[V]()
+
+        private val subscriber: Map[Uid, Ctx[V]] => Executable = { in =>
+          println(s"************ $in")
+          if (in.contains(iUid)) {
+            Executable {
+              render.update(in(iUid).lastItem.get).run()
+            }
+
+          } else Executable()
         }
+
+        parent.render.subscribe(subscriber)
       }
     }
 
@@ -161,18 +173,18 @@ object CtxTest extends App {
       }
 
       val newValues = model.map { case (key, value) =>
-        val ctx = getContext(Get[Uid,V](key))
+        val ctx = getContext(Get[Uid, V](key))
         (key, ctx.chain.update(action, value), ctx)
       }
 
-      lastItem.set(newValues.map { case (key, _, ctx) => key -> ctx}.toMap)
-      newValues.map { case (key, newValue, _) => key -> newValue}.toMap.asInstanceOf[B]
+      lastItem.set(newValues.map { case (key, _, ctx) => key -> ctx }.toMap)
+      newValues.map { case (key, newValue, _) => key -> newValue }.toMap.asInstanceOf[B]
     }
     parent.chain.subscribe(update)
 
     parent.render.subscribe { model =>
       val m = model.map { case (uid, _) =>
-        uid -> getContext(Get[Uid,V](uid))
+        uid -> getContext(Get[Uid, V](uid))
       }
       render.update(m)
     }
@@ -218,14 +230,14 @@ object CtxTest extends App {
   }
 
   def subscriberFor(uid: Uid): Int => Executable = { input =>
-    Executable{
+    Executable {
       println(s"[RENDER] mapCtxChildren $uid: $input")
     }
   }
 
   val subscriber: MapCtxModel[Uid, Int] => Executable = { actualMapOfCtx =>
-    val executables = actualMapOfCtx.map{case (uid, ctx) =>
-      if(!subscribers.contains(uid)) {
+    val executables = actualMapOfCtx.map { case (uid, ctx) =>
+      if (!subscribers.contains(uid)) {
         val subscriber = subscriberFor(uid)
         subscribers.update(uid, subscriber)
         Executable {
@@ -242,28 +254,29 @@ object CtxTest extends App {
   mapCtx.subscribe(subscriber)
 
   ctx ! AddParticipant(Uid(0))
-//  println(ctx.lastItem)
-//  println(mapCtx.lastItem)
+  //  println(ctx.lastItem)
+  //  println(mapCtx.lastItem)
 
   ctx ! IncParticipant(Uid(0))
-//  println(ctx.lastItem)
-//  println(mapCtx.lastItem)
+  //  println(ctx.lastItem)
+  //  println(mapCtx.lastItem)
 
   ctx ! IncParticipant(Uid(0))
-//  println(ctx.lastItem)
-//  println(mapCtx.lastItem)
+  //  println(ctx.lastItem)
+  //  println(mapCtx.lastItem)
 
   ctx ! AddParticipant(Uid(1))
-//  println(ctx.lastItem)
-//  println(mapCtx.lastItem)
+  //  println(ctx.lastItem)
+  //  println(mapCtx.lastItem)
 
   ctx ! IncParticipant(Uid(0))
-//  println(ctx.lastItem)
-//  println(mapCtx.lastItem)
+  //  println(ctx.lastItem)
+  //  println(mapCtx.lastItem)
 
   ctx ! IncParticipant(Uid(1))
-//  println(ctx.lastItem)
-//  println(mapCtx.lastItem)
+
+  //  println(ctx.lastItem)
+  //  println(mapCtx.lastItem)
 
   /**
    * ActiveCtx
@@ -287,6 +300,10 @@ object CtxTest extends App {
       }.observeOn(compScheduler).map { case (oldState, newState) =>
         val res = render.update(newState)
 
+        if (!res.errors.isEmpty) {
+          res.errors.foreach(_.printStackTrace())
+        }
+
         Executable {
           while (!subscribeQueue.isEmpty) {
             subscribeQueue.poll().run()
@@ -307,7 +324,7 @@ object CtxTest extends App {
         s.onNext(action)
       }
 
-      override def subscribe(subscriber:  A => Executable): Unit = {
+      override def subscribe(subscriber: A => Executable): Unit = {
         render.subscribe(subscriber)
         val actual = lastItem.get
         subscribeQueue offer Executable {

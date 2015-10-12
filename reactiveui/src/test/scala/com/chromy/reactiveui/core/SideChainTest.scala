@@ -111,6 +111,32 @@ class SideChainTest extends FunSpecLike {
       assert(List(12,11,10) == list)
     }
 
+    it("should handle errors somehow") {
+      val sc = SideChain[Int]
+
+      var list: List[Int] = Nil
+
+      val subscriber1: Int => Executable = { input =>
+        throw new Exception("Test exception")
+        Executable {
+          list = input :: list
+        }
+      }
+
+      val subscriber2: Int => Executable = { input =>
+        Executable {
+          list = input :: list
+        }
+      }
+
+      sc.subscribe(subscriber1)
+      sc.subscribe(subscriber2)
+
+      val r = sc.update(10)
+      assert(r.errors.size == 1)
+      r.run()
+      assert(List(10) == list)
+    }
   }
 
 }
