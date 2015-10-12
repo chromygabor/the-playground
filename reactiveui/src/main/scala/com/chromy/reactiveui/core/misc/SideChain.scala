@@ -3,6 +3,7 @@ package com.chromy.reactiveui.core.misc
 import java.util.concurrent.atomic.AtomicReference
 
 import scala.collection.mutable.{WeakHashMap => WMap, Map => MMap}
+import scala.util.{Failure, Success, Try}
 
 /**
  * Created by cry on 2015.09.22..
@@ -11,19 +12,16 @@ import scala.collection.mutable.{WeakHashMap => WMap, Map => MMap}
 trait Executable {
   def run(): Unit
 
-  def error(): Unit = {}
+  def errors: List[Throwable]
 }
 
 object Executable {
   def apply(f: => Unit) = new Executable {
     override def run(): Unit = f
+
+    override val errors = List.empty[Throwable]
   }
 
-  def apply(success: => Unit, unsuccess: => Unit) = new Executable {
-    override def run(): Unit = success
-
-    override def error(): Unit = unsuccess
-  }
 }
 
 trait BehaviorSideChain[T] extends SideChain[T] {
@@ -132,10 +130,28 @@ trait SideChain[T] {
 
 object SideChain {
   def apply[T](): SideChain[T] = new SideChain[T] {
-    override val update: T => Executable =  { in =>
-      val allSubscribers = subscribers.map(_.apply(in))
-      Executable {
-        allSubscribers.foreach(_.run())
+    override val update: T => Executable = { in =>
+      val init: Executable = Executable()
+      subscribers.foldLeft(init) { case (executables, subscriber) =>
+        Try {
+          subscriber(in)
+        } match {
+          case Success(executable) => new Executable {
+            override def run(): Unit = {
+              executables.run()
+              executable.run
+            }
+
+            override def errors: List[Throwable] = errors
+          }
+          case Failure(t) => new Executable {
+            override def run(): Unit = {
+              executables.run()
+            }
+
+            override def errors: List[Throwable] = t :: errors
+          }
+        }
       }
     }
   }
