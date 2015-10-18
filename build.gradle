@@ -1,9 +1,10 @@
 def langLevel = 1.8
  
 allprojects {
- 
+
+    apply plugin: 'scala'
     apply plugin: 'idea'
- 
+
     group = 'com.chromy.playground'
     version = '0.1'
 }
@@ -36,6 +37,8 @@ project(':metro') {
 project(':sandbox') {
  
     dependencies {
+        compile 'io.reactivex:rxscala_2.11:0.24.0'
+        compile 'com.github.julien-truffaut:monocle-macro_2.11:1.1.1'
     }
 }
  
@@ -46,7 +49,14 @@ project(':binarytree') {
 }
 
 project(':reactiveui') {
-
+    dependencies {
+        compile 'io.reactivex:rxscala_2.11:0.24.0'
+        compile 'org.scalatest:scalatest_2.11:2.2.4'
+        compile 'com.github.julien-truffaut:monocle-core_2.11:1.1.1'
+        compile 'com.github.julien-truffaut:monocle-macro_2.11:1.1.1'
+    }
+}
+project(':frpui') {
     dependencies {
         compile 'io.reactivex:rxscala_2.11:0.24.0'
         compile 'org.scalatest:scalatest_2.11:2.2.4'

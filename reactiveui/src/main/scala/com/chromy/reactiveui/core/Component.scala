@@ -1,8 +1,7 @@
 package com.chromy.reactiveui.core
 
-import com.chromy.reactiveui.core.misc.Executable
-import rx.lang.scala.subjects.BehaviorSubject
-import rx.lang.scala.{Observer, Scheduler => ScalaScheduler, Subscriber}
+import com.chromy.reactiveui.core.misc.SideEffect
+import rx.lang.scala.{Observer, Scheduler => ScalaScheduler}
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
@@ -86,7 +85,7 @@ trait Component[M <: UiModel] extends UiComponent {
   final val channel: Observer[Action] = context.channel
 
 
-  final def subscribe(subscriber: ModelType => Executable) = {
+  final def subscribe(subscriber: ModelType => SideEffect) = {
     context.changes.subscribe(subscriber)
     subscriber.apply(initialState).run()
   }

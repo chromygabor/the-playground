@@ -4,11 +4,8 @@ package com.chromy.reactiveui.core
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicReference
 
-import com.chromy.reactiveui.core.misc.{SideChain, Executable, ListDiff}
+import com.chromy.reactiveui.core.misc._
 import rx.lang.scala.{Scheduler => ScalaScheduler, _}
-import rx.schedulers.Schedulers
-
-import scala.concurrent.ExecutionContext
 
 /**
  * Created by cry on 2015.08.04..
@@ -127,7 +124,7 @@ trait ListComponentOf[A <: UiComponent] extends SimpleComponent {
 
   val context = {
     new Context[ModelType] {
-      override val changes: SideChain[ModelType] = myContext.changes.map { _ =>
+      override val changes: SideEffectChain[ModelType] = myContext.changes.map { _ =>
         queue.poll()
       }.filter(_ != null).distinctUntilChanged
 
@@ -140,7 +137,7 @@ trait ListComponentOf[A <: UiComponent] extends SimpleComponent {
     }
   }
 
-  def subscribe(subscriber: List[Operation[ComponentType]] => Executable) = {
+  def subscribe(subscriber: List[Operation[ComponentType]] => SideEffect) = {
     context.changes.subscribe(subscriber)
   }
 }

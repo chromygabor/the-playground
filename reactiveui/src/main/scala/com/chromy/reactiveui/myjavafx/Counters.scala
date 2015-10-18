@@ -5,7 +5,7 @@ import javafx.scene.control.Button
 import javafx.scene.layout.FlowPane
 
 import com.chromy.reactiveui.core._
-import com.chromy.reactiveui.core.misc.Executable
+import com.chromy.reactiveui.core.misc.{SideEffect, SideEffect$}
 import com.chromy.reactiveui.core.misc.Utils._
 import monocle.macros.GenLens
 
@@ -52,13 +52,13 @@ class CountersController extends GenericJavaFXController[Counters] {
 
   private var _component: Counters = _
 
-  lazy val subscriber: CountersModel => Executable = { changes => Executable {
+  lazy val subscriber: CountersModel => SideEffect = { changes => SideEffect {
     bAdd.setOnAction { () => _component.channel.onNext(Add) }
   }
 
   }
 
-  lazy val listSubscriber: List[Operation[Counter]] => Executable = { changes =>
+  lazy val listSubscriber: List[Operation[Counter]] => SideEffect = { changes =>
 
     //This happens on the background thread
     val moveItems = changes filter {
@@ -69,7 +69,7 @@ class CountersController extends GenericJavaFXController[Counters] {
     } reverse
 
     //This will happen on the UI thread
-    Executable {
+    SideEffect {
       changes foreach {
         case MoveItem(_, _, computedIndex, _) =>
           pCounters.getChildren.remove(computedIndex)

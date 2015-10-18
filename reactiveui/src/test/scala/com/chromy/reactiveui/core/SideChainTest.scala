@@ -3,7 +3,7 @@ package com.chromy.reactiveui.core
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicReference
 
-import com.chromy.reactiveui.core.misc.{Executable, SideChain}
+import com.chromy.reactiveui.core.misc.{SideEffect, SideEffectChain, SideEffect$, SideEffectChain$}
 import org.scalatest.FunSpecLike
 
 import scala.concurrent.{Await, Future, ExecutionContext}
@@ -17,16 +17,16 @@ class SideChainTest extends FunSpecLike {
 
   describe("SideChain") {
     it("should run on different thread") {
-      val sc = SideChain[Int]
+      val sc = SideEffectChain[Int]
 
       val thread1: AtomicReference[String] = new AtomicReference[String]("")
       val thread2: AtomicReference[String] = new AtomicReference[String]("")
 
 
-      val subscriber1: Int => Executable = { input =>
+      val subscriber1: Int => SideEffect = { input =>
         Thread.sleep(100)
         thread1.set(Thread.currentThread.getName)
-        Executable {
+        SideEffect {
           Thread.sleep(100)
           thread2.set(Thread.currentThread.getName)
         }
@@ -48,12 +48,12 @@ class SideChainTest extends FunSpecLike {
 
     }
     it("should filter by the input") {
-      val sc = SideChain[Int]
+      val sc = SideEffectChain[Int]
 
       var list: List[Int] = Nil
 
-      val subscriber1: Int => Executable = { input =>
-        Executable {
+      val subscriber1: Int => SideEffect = { input =>
+        SideEffect {
           list = input :: list
         }
       }
@@ -68,12 +68,12 @@ class SideChainTest extends FunSpecLike {
     }
 
     it("should map input") {
-      val sc = SideChain[Int]
+      val sc = SideEffectChain[Int]
 
       var list: List[Int] = Nil
 
-      val subscriber1: Int => Executable = { input =>
-        Executable {
+      val subscriber1: Int => SideEffect = { input =>
+        SideEffect {
           list = input :: list
         }
       }
@@ -89,12 +89,12 @@ class SideChainTest extends FunSpecLike {
     }
 
     it("should make distinguish") {
-      val sc = SideChain[Int]
+      val sc = SideEffectChain[Int]
 
       var list: List[Int] = Nil
 
-      val subscriber1: Int => Executable = { input =>
-        Executable {
+      val subscriber1: Int => SideEffect = { input =>
+        SideEffect {
           list = input :: list
         }
       }
@@ -112,19 +112,19 @@ class SideChainTest extends FunSpecLike {
     }
 
     it("should handle errors somehow") {
-      val sc = SideChain[Int]
+      val sc = SideEffectChain[Int]
 
       var list: List[Int] = Nil
 
-      val subscriber1: Int => Executable = { input =>
+      val subscriber1: Int => SideEffect = { input =>
         throw new Exception("Test exception")
-        Executable {
+        SideEffect {
           list = input :: list
         }
       }
 
-      val subscriber2: Int => Executable = { input =>
-        Executable {
+      val subscriber2: Int => SideEffect = { input =>
+        SideEffect {
           list = input :: list
         }
       }

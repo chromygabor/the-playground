@@ -1,6 +1,6 @@
 package com.chromy.reactiveui.core
 
-import com.chromy.reactiveui.core.misc.SideChain
+import com.chromy.reactiveui.core.misc.SideEffectChain$
 import rx.lang.scala.{Observable, Observer}
 
 import scala.collection.mutable.{WeakHashMap => WMap}

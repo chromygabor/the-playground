@@ -3,7 +3,7 @@ package com.chromy.reactiveui
 import java.util.concurrent.atomic.AtomicReference
 
 import com.chromy.reactiveui.TestUtils._
-import com.chromy.reactiveui.core.misc.Executable
+import com.chromy.reactiveui.core.misc.{SideEffect, SideEffect$}
 import com.chromy.reactiveui.core.{Action, Uid}
 import monocle.Lens
 import monocle.macros.GenLens
@@ -81,14 +81,14 @@ object CtxTest extends App {
 
   trait CtxRender[T] {
     private[this] val _subscribersLock: Object = new Object()
-    private[this] val _subscribers: MMap[(T => Executable), Int] = WMap()
+    private[this] val _subscribers: MMap[(T => SideEffect), Int] = WMap()
     private[this] val _lastEmittedItem = new AtomicReference[T]()
 
     val name: String
     val uid: Uid
 
-    private[this] def subscribers: List[(T => Executable)] = {
-      var newSubscribers: List[T => Executable] = null
+    private[this] def subscribers: List[(T => SideEffect)] = {
+      var newSubscribers: List[T => SideEffect] = null
       _subscribersLock.synchronized {
         newSubscribers = _subscribers.toList.sortBy(_._2).map {
           _._1
@@ -97,24 +97,24 @@ object CtxTest extends App {
       newSubscribers
     }
 
-    def subscribe(subscriber: (T) => Executable): Executable = {
+    def subscribe(subscriber: (T) => SideEffect): SideEffect = {
       _subscribersLock.synchronized {
         _subscribers.update(subscriber, _subscribers.size)
       }
       if(_lastEmittedItem.get != null) {
         subscriber.apply(_lastEmittedItem.get)
-      } else Executable()
+      } else SideEffect()
     }
 
-    def createRenderer(in: T): Executable = {
+    def createRenderer(in: T): SideEffect = {
       if(in != _lastEmittedItem.getAndSet(in)) {
         println(s"[CREATING RENDERER] $name[$uid]: $in")
         _lastEmittedItem.set(in)
-        subscribers.foldLeft(Executable()) { case (executables, subscriber) =>
+        subscribers.foldLeft(SideEffect()) { case (executables, subscriber) =>
           val s = { () => subscriber(in) }
           executables.append(s)
         }
-      } else Executable()
+      } else SideEffect()
     }
   }
 
@@ -214,7 +214,7 @@ object CtxTest extends App {
       lastItem.set(newModel)
       lens.set(newModel)(model)
     }
-    private[this] val parentSubscriber: A => Executable = { in => createRenderer(lens.get(in)) }
+    private[this] val parentSubscriber: A => SideEffect = { in => createRenderer(lens.get(in)) }
 
     parent.react(parentReactor)
     parent.subscribe(parentSubscriber)
@@ -280,7 +280,7 @@ object CtxTest extends App {
       newValues.map { case (key, newValue, _) => key -> newValue }.toMap.asInstanceOf[Map[K, V]]
     }
 
-    private[this] val parentSubscriber: (Map[K, V] => Executable) = { model =>
+    private[this] val parentSubscriber: (Map[K, V] => SideEffect) = { model =>
       val m = model.map { case (uid, _) =>
         uid -> getContext(Get[K, V](uid))
       }
@@ -299,7 +299,7 @@ object CtxTest extends App {
 
 
   val contexts = MMap[String, Ctx[Int]]()
-  val subscribers = WMap[Ctx[Int], Int => Executable]()
+  val subscribers = WMap[Ctx[Int], Int => SideEffect]()
   val reactors = WMap[Ctx[Int], (Action, Int, Int) => Int]()
 
   val updateMap: (Action, MapModel, MapModel) => MapModel = { (action, original, model) =>
@@ -321,7 +321,7 @@ object CtxTest extends App {
   ctx.react(updateMap)
 
   ctx.subscribe { model =>
-    Executable {
+    SideEffect {
       //println(s"[RENDER] ctx: $model")
     }
   }
@@ -341,22 +341,22 @@ object CtxTest extends App {
       context
   }
 
-  def subscriberFor(partId: String): Int => Executable = { input =>
-    Executable {
+  def subscriberFor(partId: String): Int => SideEffect = { input =>
+    SideEffect {
       println(s"[RENDER] mapCtxChildren $partId: $input")
     }
   }
 
-  val subscriber: Map[String, Ctx[Int]] => Executable = { actualMapOfCtx =>
+  val subscriber: Map[String, Ctx[Int]] => SideEffect = { actualMapOfCtx =>
     val executables = actualMapOfCtx.map { case (uid, ctx) =>
       if (!subscribers.contains(ctx)) {
         val subscriber = subscriberFor(uid)
         subscribers.update(ctx, subscriber)
         ctx.subscribe(subscriber)
           //println(s"[RENDER] mapCtx: subscribing to $ctx")
-      } else Executable {}
+      } else SideEffect {}
     }
-    Executable {
+    SideEffect {
       executables.foreach(_.run())
     }
   }
@@ -399,8 +399,8 @@ object CtxTest extends App {
           res.errors.foreach(_.printStackTrace())
         }
         res
-      }.observeOn(ioScheduler).subscribe(new Subscriber[Executable]() {
-        override def onNext(sideEffect: Executable): Unit = {
+      }.observeOn(ioScheduler).subscribe(new Subscriber[SideEffect]() {
+        override def onNext(sideEffect: SideEffect): Unit = {
           sideEffect.run()
         }
 

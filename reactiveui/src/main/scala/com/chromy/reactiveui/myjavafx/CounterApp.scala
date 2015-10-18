@@ -8,7 +8,7 @@ import javafx.scene.{Parent, Scene}
 import javafx.stage.Stage
 
 import com.chromy.reactiveui.core._
-import com.chromy.reactiveui.core.misc.SideChain
+import com.chromy.reactiveui.core.misc.{SideEffectChain, SideEffectChain$}
 import com.chromy.reactiveui.myjavafx.CounterNavigatorDialog
 import monocle.macros.GenLens
 import rx.lang.scala.schedulers.IOScheduler
@@ -60,7 +60,7 @@ object CounterApp extends App with ServiceAware {
     lazy val name = s"DSP-MainComponent"
     println(s"[$name] created ")
 
-    override val changes = SideChain[M]
+    override val changes = SideEffectChain[M]
     override val chain: UpdateChain[M] = UpdateChain()
     override val channel = Subject[Action]
     override val initialState = CounterAppModel()

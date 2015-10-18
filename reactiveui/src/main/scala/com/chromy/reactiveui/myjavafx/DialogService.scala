@@ -6,7 +6,7 @@ import javafx.stage.Stage
 
 import com.chromy.reactiveui._
 import com.chromy.reactiveui.core._
-import com.chromy.reactiveui.core.misc.Executable
+import com.chromy.reactiveui.core.misc.{SideEffect, SideEffect$}
 import monocle.macros.GenLens
 import rx.lang.scala.{Observable, Observer, Subscriber}
 
@@ -73,8 +73,8 @@ trait DialogServiceController extends JavaFXController {
 
   val dialogService = CounterApp.service[DialogService]
 
-  private lazy val dialogSubscriber: List[Operation[DialogManifest]] => Executable = { value =>
-    Executable {
+  private lazy val dialogSubscriber: List[Operation[DialogManifest]] => SideEffect = { value =>
+    SideEffect {
       value.filter {
         case e: AddItem[_] => true
         case _ => false

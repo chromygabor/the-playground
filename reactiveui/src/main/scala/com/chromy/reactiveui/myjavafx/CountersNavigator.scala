@@ -4,7 +4,7 @@ import javafx.fxml.FXML
 import javafx.scene.control.{Button, Label}
 
 import com.chromy.reactiveui.core._
-import com.chromy.reactiveui.core.misc.Executable
+import com.chromy.reactiveui.core.misc.{SideEffect, SideEffect$}
 import com.chromy.reactiveui.core.misc.Utils._
 import com.chromy.reactiveui.myjavafx.CounterNavigator.{Down, Open, Up}
 import rx.lang.scala.{Observer, Subscriber}
@@ -69,7 +69,7 @@ class CounterNavigatorController extends GenericJavaFXController[CounterNavigato
 
   private var _component: Component = _
 
-  lazy val subscriber: CounterNavigatorModel =>  Executable =  { model => Executable {
+  lazy val subscriber: CounterNavigatorModel =>  SideEffect =  { model => SideEffect {
       val (text, textEnabled, hasPrev, hasNext) = model.actual match {
         case None =>
           (" N/A ", false, false, false)

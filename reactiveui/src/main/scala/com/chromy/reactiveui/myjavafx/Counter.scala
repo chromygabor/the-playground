@@ -4,7 +4,7 @@ import javafx.fxml.FXML
 import javafx.scene.control.{Button, Label}
 
 import com.chromy.reactiveui.core._
-import com.chromy.reactiveui.core.misc.Executable
+import com.chromy.reactiveui.core.misc.{SideEffect, SideEffect$}
 import com.chromy.reactiveui.core.misc.Utils._
 import com.chromy.reactiveui.myjavafx.Counter._
 import rx.lang.scala.{Observer, Subscriber}
@@ -76,7 +76,7 @@ class CounterController extends GenericJavaFXController[Counter] {
   lazy val btnClose = _btnClose
   private[this] var _component: Counter = _
 
-  lazy val subscriber: CounterModel => Executable = { model => Executable {
+  lazy val subscriber: CounterModel => SideEffect = { model => SideEffect {
     btnIncrement.setDisable(!model.buttonEnabled)
     btnDecrement.setDisable(!model.buttonEnabled)
 

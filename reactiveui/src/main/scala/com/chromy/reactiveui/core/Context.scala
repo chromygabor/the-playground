@@ -1,12 +1,8 @@
 package com.chromy.reactiveui.core
 
-import java.util.concurrent.Executor
-
-import com.chromy.reactiveui.core.misc.SideChain
+import com.chromy.reactiveui.core.misc.SideEffectChain
 import monocle.Lens
-import rx.lang.scala.schedulers.ImmediateScheduler
-import rx.lang.scala.{Scheduler, Observable, Observer}
-import rx.schedulers.Schedulers
+import rx.lang.scala.Observer
 
 import scala.concurrent.ExecutionContext
 
@@ -21,7 +17,7 @@ trait ContextMapper[B] {
 trait Context[A] {
   //def render: SideChain[A]
   //def changes: Observable[A]
-  def changes: SideChain[A]
+  def changes: SideEffectChain[A]
   def channel: Observer[Action]
   def chain: UpdateChain[A]
   def initialState: A
