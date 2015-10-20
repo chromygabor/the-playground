@@ -1,7 +1,6 @@
 package com.chromy.frpui
 
-import com.chromy.frpui.util.ListDiff
-import ListDiff.{ListOp, Move, Remove, Insert}
+import com.chromy.frpui.util.DiffUtils._
 import com.chromy.frpui.core.Updater.Simple
 import com.chromy.frpui.core._
 import monocle.macros.GenLens
@@ -56,16 +55,27 @@ object ConceptApp extends App {
     val leftComponents = ArrayBuffer[LeftSubComponent]()
 
     val subscriber = Render.scan[MainModel](initialState) { (prev, model) =>
-      val l = ListDiff.diffOps(prev.left, model.left)(_.uid.uid).map {
+      /*
+      Rendering left as a List
+      */
+      val left = prev.left.diffOps(model.left)(_.uid).map {
         case Insert(pos, item) =>
           val component = LeftSubComponent(render.map(_.left).indexOption(pos), item)
           Insert(pos, component)
         case Remove(pos) => Remove(pos)
         case Move(from, to) => Move(from, to)
       }
+
+      /*
+      Rendering right as Map
+       */
+//       val right = MapDiff.diffOps(prev.right, model.right)(_.uid.uid) {
+//
+//       }
+
       SideEffect {
         println(s"[MainComponent] $prev => $model")
-        l.foreach {
+        left.foreach {
           case Insert(pos, component) =>
             leftComponents.insert(pos, component)
             component.render.update(component.initialState).run()
