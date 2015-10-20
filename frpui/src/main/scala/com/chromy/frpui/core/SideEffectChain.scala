@@ -149,7 +149,30 @@ trait SideEffectChain[T] {
       }
       parent.subscribe(updater)
     }
+  }
 
+  def keyOption[K,V](key: K)(implicit ev: T <:< Map[K,V]): SideEffectChain[V] = {
+    val myParent = this
+
+    new SideEffectChain[V] {
+      private val parent = myParent
+      override val update: V => SideEffect = { in =>
+        subscribers.foldLeft(SideEffect()) { case (executables, subscriber) =>
+          val s ={ () => subscriber(in) }
+          executables.append(s)
+        }
+      }
+
+      private val updater: T => SideEffect = { in =>
+        val l = in.asInstanceOf[Map[K, V]]
+        if(l.isDefinedAt(key)) {
+          update(l(key))
+        } else {
+          SideEffect()
+        }
+      }
+      parent.subscribe(updater)
+    }
   }
 
   val update: T => SideEffect
