@@ -53,6 +53,7 @@ object ConceptApp extends App {
 
   case class MainComponent(render: SideEffectChain[MainModel], initialState: MainModel = MainModel()) extends Component[MainModel] {
     val leftComponents = ArrayBuffer[LeftSubComponent]()
+    val rightComponenets = scala.collection.mutable.Map[Uid, RightSubComponent]()
 
     val subscriber = Render.scan[MainModel](initialState) { (prev, model) =>
       /*
@@ -66,15 +67,21 @@ object ConceptApp extends App {
         case Move(from, to) => Move(from, to)
       }
 
-      /*
-      Rendering right as Map
+       /*
+       Rendering right as Map
        */
-//       val right = MapDiff.diffOps(prev.right, model.right)(_.uid.uid) {
-//
-//       }
+       val right = prev.right.diffOps(model.right) map {
+          case KeyUpdate(key, value) =>
+            val newComponent = RightSubComponent(render.map(_.right).keyOption(key: Uid), value)
+            KeyUpdate[Uid, RightSubComponent](key, newComponent)
+          case KeyRemove(key) =>
+            KeyRemove[Uid, RightSubComponent](key: Uid)
+       }
+
 
       SideEffect {
         println(s"[MainComponent] $prev => $model")
+
         left.foreach {
           case Insert(pos, component) =>
             leftComponents.insert(pos, component)
@@ -85,21 +92,37 @@ object ConceptApp extends App {
             val component = leftComponents.remove(from)
             leftComponents.insert(to, component)
         }
+
+        right.foreach {
+          case KeyUpdate(key, component) =>
+            rightComponenets.update(key, component)
+            component.render.update(component.initialState).run()
+          case KeyRemove(key) =>
+            rightComponenets.remove(key)
+        }
       }
     }
-    render.subscribe(subscriber)
+    render.distinctUntilChanged.subscribe(subscriber)
   }
 
   case class LeftSubComponent(render: SideEffectChain[LeftSubmodel], initialState: LeftSubmodel) extends Component[LeftSubmodel] {
     val subscriber = Render[LeftSubmodel] { model =>
       SideEffect {
-        println(s"[LeftSubComponent] $model" )
+        println(s"[LeftSubComponent#${initialState.uid}] $model" )
       }
     }
 
-    render.subscribe(subscriber)
+    render.distinctUntilChanged.subscribe(subscriber)
   }
-  case class RightSubComponent(render: SideEffectChain[RightSubmodel]) extends Component[RightSubmodel]
+
+  case class RightSubComponent(render: SideEffectChain[RightSubmodel], initialState: RightSubmodel) extends Component[RightSubmodel] {
+    val subscriber = Render[RightSubmodel] {model =>
+      SideEffect {
+        println(s"[RightSubComponent#${initialState.uid}] $model")
+      }
+    }
+    render.distinctUntilChanged.subscribe(subscriber)
+  }
 
   val s = Subject[Action]
   val initialModel = MainModel()
@@ -115,7 +138,13 @@ object ConceptApp extends App {
 
   val u1 = Uid()
   s.onNext(AddItem(u1))
-  s.onNext(IncrementValue(10, u1))
-  s.onNext(IncrementValue(10, u1))
+  s.onNext(IncrementValue(2, u1))
+  s.onNext(IncrementValue(5, u1))
+
+  val u2 = Uid()
+  s.onNext(AddValue(u2))
+  s.onNext(IncrementValue(7, u2))
+  s.onNext(IncrementValue(9, u2))
+  s.onNext(IncrementValue(11, u2))
 
 }
