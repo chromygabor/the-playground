@@ -22,11 +22,9 @@ object DiffUtils {
 
   sealed trait MapOp[K, V]
 
-  case class KeyAdd[K, V](key: K, value: V) extends MapOp[K, V]
+  case class KeyUpdate[K, V](key: K, value: V) extends MapOp[K, V]
 
   case class KeyRemove[K, V](key: K) extends MapOp[K, V]
-
-  case class KeyModified[K, V](key: K, value: V) extends MapOp[K, V]
 
   sealed trait SetOp[T]
 
@@ -44,7 +42,7 @@ object DiffUtils {
 
 class MapUtils[K, V](left: Map[K, V]) {
 
-  def diffOps[U](right: Map[K, V])(createUid: V => U): Seq[MapOp[_ <: K, _ <: V]] = {
+  def diffOps(right: Map[K, V], trackValueChanges: Boolean = false): Seq[MapOp[_ <: K, _ <: V]] = {
 
     val l1 = left.foldLeft(Map[K, (Option[V], Option[V])]()) { case (accu, (key, _)) =>
       accu.updated(key, (left.get(key), None))
@@ -55,13 +53,16 @@ class MapUtils[K, V](left: Map[K, V]) {
       accu.updated(key, nv.getOrElse(None, right.get(key)))
     }
 
-    l2.map { case (key, (oov, onv)) =>
+    val res = if(!trackValueChanges) l2.filter { case (_, (oov, onv)) => !oov.isDefined || !onv.isDefined} else l2.filter { case (_, (oov, onv)) => oov != onv }
+
+    res.map { case (key, (oov, onv)) =>
       (oov, onv) match {
-        case (None, Some(nv)) => KeyAdd(key, nv)
-        case (Some(_), Some(nv)) => KeyModified(key, nv)
+        case (None, Some(nv)) => KeyUpdate(key, nv)
+        case (Some(_), Some(nv)) => KeyUpdate(key, nv)
         case (Some(_), None) => KeyRemove(key)
+        case _ => throw new IllegalStateException("Both values are None")
       }
-    } toSeq
+    } toSeq : Seq[MapOp[_ <: K, _ <: V]]
   }
 }
 
@@ -75,7 +76,7 @@ class SetUtils[T](left: Set[T]) {
       }
     }
 
-    l.map( item => ItemRemove(item) ) ++ r.map ( item => ItemAdd(item) ) toSeq
+    l.map(item => ItemRemove(item)) ++ r.map(item => ItemAdd(item)) toSeq
   }
 }
 
@@ -222,13 +223,23 @@ class MapDiffTest extends FunSpecLike {
 
       val testMap = scala.collection.mutable.Map[Int, Item](left.toList: _*)
 
-      left.diffOps(right)(_.value) foreach {
-        case KeyAdd(key, value) => testMap.update(key, value)
+      left.diffOps(right, true) foreach {
+        case KeyUpdate(key, value) => testMap.update(key, value)
         case KeyRemove(key) => testMap.remove(key)
-        case KeyModified(key, value) => testMap.update(key, value)
       }
 
       assert(Map(testMap.toList: _*) == right)
+
+
+      val left2 = Map(0 -> Item(10), 1 -> Item(20), 2 -> Item(30), 3 -> Item(40), 4 -> Item(55))
+      val right2 = Map(0 -> Item(10), 1 -> Item(20), 2 -> Item(30), 3 -> Item(40), 4 -> Item(55))
+
+      assert(left2.diffOps(right2).mkString("\n").size == 0)
+
+      val left3 = Map(0 -> Item(10), 1 -> Item(20), 2 -> Item(30), 3 -> Item(40), 4 -> Item(55))
+      val right3 = Map(0 -> Item(11), 1 -> Item(21), 2 -> Item(31), 3 -> Item(41), 4 -> Item(56))
+
+      assert(left3.diffOps(right3).mkString("\n").size == 0)
     }
   }
 }
