@@ -1,4 +1,4 @@
-'''scala
+```scala
 object Basics extends App {
   val list = List("A", "B", "C", "D")
 
@@ -8,9 +8,9 @@ object Basics extends App {
 
   println(result)
 }
-'''
+```
 
 Output:
-'''console
+```console
 List(Z, ZA, ZAB, ZABC, ZABCD)
-'''
+```
