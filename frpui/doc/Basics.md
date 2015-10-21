@@ -1,3 +1,6 @@
+# Functional Reactive UI framework
+
+
 ```scala
 object Basics extends App {
   val list = List("A", "B", "C", "D")
@@ -10,7 +13,39 @@ object Basics extends App {
 }
 ```
 
-Output:
-```console
-List(Z, ZA, ZAB, ZABC, ZABCD)
+Output is:  
+Z  
+ZA  
+ZAB  
+ZABC  
+ZABCD  
+
+
+Rx Stream
 ```
+object Stream extends App{
+  val s = Subject[String]()
+
+  s.scan("Z"){ (accu, item) =>
+    accu + item
+  }.foreach { model =>
+    println(model)
+  }
+
+
+  s.onNext("A")
+  s.onNext("B")
+  s.onNext("C")
+  s.onNext("D")
+}
+```
+
+Output is:  
+Z  
+ZA  
+ZAB  
+ZABC  
+ZABCD  
+
+
+
