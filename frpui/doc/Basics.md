@@ -1,10 +1,10 @@
 # Functional Reactive UI framework
 
-I wanted to prove that we can model an application wich have a lot of sources of actions, can have immutable state.
+I wanted to prove that an application wich have a lot of sources of actions, can have state represented by immutable datastructure.
 
 ### Collections
 Basically we start with a simple collection. Each collection has a scan method. In this case we use the scanLeft method,
-because we want to fold up the collect which is a stream of elements, from the left to the right. This is the natural flow by time.
+because we want to fold up the collection which is a stream of elements, from the left to the right. This is the natural flow by time.
 
 The scanLeft accumulate the actual item with the previously accumulated value and emits this. At the first time this is the zero element.
 
@@ -30,7 +30,7 @@ ZAB
 ZABC  
 ZABCD  
 
-Substitute:
+Substitution:
 1. it emits the zero element: Z
 2. it accumulates the previous element (Z) with the actual element which is the first element in the collection (A) and emits that: ZA
 3. takes the last accumulated (same as emitted) element and the next element in the collection (B), accumulate them and emits that: ZAB
@@ -78,8 +78,7 @@ ZABC
 ZABCD  
 
 You can see, first we created a stream (in this particular case, a Subject), which contains no element, but we prepare for future elements.
-These future elements are coming by `onNext(e)`. The behavior is the same as was with the collection above, but in this case the stream is an
-infinite stream of elements. It ends only if `onComplete()` being called.
+These future elements are coming by `onNext(e)`. The behavior is the same as was with the collection above, but in this case the stream is an infinite stream of elements. It ends only if `onComplete()` being called.
 
 With these knowledge we can step further. Why don't we create complex type instead of a String.
 
@@ -113,7 +112,7 @@ MainModel(30)
 MainModel(60)  
 MainModel(100)  
 
-Which is nothing extra comparing to the previous example. But it highlights something `model.copy(model.value + item)` line.
+Which is nothing extra comparing to the previous example. But it highlights something with the `model.copy(model.value + item)` line.
 There is something with it. I guess you will see, if I split it up:
 
 ```scala
@@ -170,7 +169,7 @@ object StreamModel extends App {
 ```
 
 Much better. We could generalize AppStream. Now we can create any kind of model, which is responsible for it's own job, to adding number to its contained value.
-If you take a step back, you can acquire something. There is an application, which state was stores in the `MainModel` class.
+If you take a step back, you can acquire something. There is an application, which state was stored in the `MainModel` class.
 And the application steps its state by actions, which in this cases are Ints (passing to the `onNext(e)` function).
 
 But!
