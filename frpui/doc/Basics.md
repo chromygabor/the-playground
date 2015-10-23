@@ -1,6 +1,6 @@
-# Functional Reactive UI framework
+# Functional Reactive UI framework in Scala
 
-I wanted to prove that an application wich have a lot of sources of actions, can have state represented by immutable datastructure.
+With this article and experience, I want to prove that an application wich have a lot of sources of actions, can have state represented by immutable datastructure.
 
 ### Collections
 Basically we start with a simple collection. Each collection has a scan method. In this case we use the scanLeft method,
@@ -250,6 +250,54 @@ class AppStream[T <: {def step(action : Action) : T}](initialValue: T) {
 }
 ```
 
-Now the app doesn't compile. It's normal, we need to modify the Models.
+Now the app doesn't compile. It's normal, we need to modify the Models. As we saw above, the new `step(action)` function signature should be the following:
+```scala
+case class LeftModel(value: Int = 0) {
+  def step(action: Action): LeftModel = ???
+}
+case class RightModel(value: Int = 0) {
+  def step(action: Action): RightModel = ???
+}
+case class MainModel(left: LeftModel = LeftModel(), right: RightModel = RightModel()) {
+  def step(action: Action): MainModel = MainModel(left = left.step(action), right = right.step(action))
+}
+```
 
- 
+We still left them unimplemented. How should the `step(action)` function work. It should somehow work with both of the action type: `AddValueEmitted(number)` and `SubValueEmitted(number)`.
+Pattern matching is the right way to do this:
+```scala
+case class LeftModel(value: Int = 0) {
+  def step(action: Action): LeftModel = action match {
+    case AddValueEmitted(number) => LeftModel(value + number)
+    case SubValueEmitted(number) => LeftModel(value + number)
+  } 
+}
+
+case class RightModel(value: Int = 0) {
+  def step(action: Action): RightModel = action match {
+    case AddValueEmitted(number) => RightModel(value + number)
+    case SubValueEmitted(number) => RightModel(value + number)
+  }
+}
+```
+In this example, both model reacts to both action type in the same way. They create a new instance of them, with the new value.  
+Now the application compiles with this:
+```scala
+object StreamModelAction extends App {
+  val app = new AppStream(MainModel())
+
+  app.s.onNext(AddValueEmitted(10))
+  app.s.onNext(AddValueEmitted(20))
+  app.s.onNext(AddValueEmitted(30))
+  app.s.onNext(AddValueEmitted(40))
+}
+```
+And the output:  
+MainModel(LeftModel(0),RightModel(0))  
+MainModel(LeftModel(10),RightModel(10))  
+MainModel(LeftModel(30),RightModel(30))  
+MainModel(LeftModel(60),RightModel(60))  
+MainModel(LeftModel(100),RightModel(100))  
+
+### Conclusion
+I think, with this basics, we can start to build our UI framework, which works with immutable persistent data structure as application state.
