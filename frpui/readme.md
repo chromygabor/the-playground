@@ -1,4 +1,4 @@
-Functional Reactive UI Framework
+Functional Reactive UI Framework in Scala
 ====
 
-[I'm a relative reference to a repository file](./doc/Basics.md)
+[Basics](./doc/chapter_01.md)

@@ -16,8 +16,8 @@ object Basics extends App {
     accu + item
   }
 
-  result.foreach { model =>
-    println(model)
+  result.foreach { state =>
+    println(state)
   }
   println(result)
 }
@@ -58,8 +58,8 @@ object Stream extends App{
 
   val result = s.scan("Z"){ (accu, item) =>
     accu + item
-  }.foreach { model =>
-    println(model)
+  }.foreach { state =>
+    println(state)
   }
 
 
@@ -82,20 +82,20 @@ These future elements are coming by `onNext(e)`. The behavior is the same as was
 
 With these knowledge we can step further. Why don't we create complex type instead of a String.
 
-### RxJava streams with model
+### RxJava streams with state
 So, let's create the same stream app with some complex type and you will see there is nothing complex, but some fundamental parts.
 
 ```scala
-object StreamModel extends App{
+object StreamState extends App{
 
-  case class MainModel(value: Int = 0)
+  case class MainState(value: Int = 0)
 
   val s = Subject[Int]()
 
-  s.scan(MainModel()){ case (model, item) =>
-    model.copy(model.value + item)
-  }.foreach { model =>
-    println(model)
+  s.scan(MainState()){ case (state, item) =>
+    state.copy(state.value + item)
+  }.foreach { state =>
+    println(state)
   }
 
 
@@ -106,30 +106,30 @@ object StreamModel extends App{
 }
 ```
 In this case, the output is:
-MainModel(0)  
-MainModel(10)  
-MainModel(30)  
-MainModel(60)  
-MainModel(100)  
+MainState(0)  
+MainState(10)  
+MainState(30)  
+MainState(60)  
+MainState(100)  
 
-Which is nothing extra comparing to the previous example. But it highlights something with the `model.copy(model.value + item)` line.
+Which is nothing extra comparing to the previous example. But it highlights something with the `state.copy(state.value + item)` line.
 There is something with it. I guess you will see, if I split it up:
 
 ```scala
-case class MainModel(value: Int = 0)
+case class MainState(value: Int = 0)
 
 class AppStream {
   val s = Subject[Int]()
 
-  s.scan(MainModel()){ case (model, item) =>
-    model.copy(model.value + item)
-  }.foreach { model =>
-    println(model)
+  s.scan(MainState()){ case (state, item) =>
+    state.copy(state.value + item)
+  }.foreach { state =>
+    println(state)
   }
 
 }
 
-object StreamModel extends App{
+object StreamState extends App{
   val app = new AppStream
 
   app.s.onNext(10)
@@ -140,26 +140,26 @@ object StreamModel extends App{
 ```
 
 So in this case we tried to separate concerns but we couldn't really do. This is because that line, I mentioned above is not belonging to the place where it is.
-It should be moved to somewhere else. For example into the model. Try again:
+It should be moved to somewhere else. For example into the state. Try again:
 
 ```scala
-case class MainModel(value: Int = 0) {
-  def copy(newValue: Int): MainModel = MainModel(value + newValue)
+case class MainState(value: Int = 0) {
+  def copy(newValue: Int): MainState = MainState(value + newValue)
 }
 
 class AppStream[T <: {def copy(newValue : Int) : T}](initialValue: T) {
   val s = Subject[Int]()
 
-  s.scan(initialValue) { case (model, item) =>
-    model.copy(item)
-  }.foreach { model =>
-    println(model)
+  s.scan(initialValue) { case (state, item) =>
+    state.copy(item)
+  }.foreach { state =>
+    println(state)
   }
 
 }
 
-object StreamModel extends App {
-  val app = new AppStream(MainModel())
+object StreamState extends App {
+  val app = new AppStream(MainState())
 
   app.s.onNext(10)
   app.s.onNext(20)
@@ -168,8 +168,8 @@ object StreamModel extends App {
 }
 ```
 
-Much better. We could generalize AppStream. Now we can create any kind of model, which is responsible for it's own job, to adding number to its contained value.
-If you take a step back, you can acquire something. There is an application, which state was stored in the `MainModel` class.
+Much better. We could generalize AppStream. Now we can create any kind of state, which is responsible for it's own job, to adding number to its contained value.
+If you take a step back, you can acquire something. There is an application, which state was stored in the `MainState` class.
 And the application steps its state by actions, which in this cases are Ints (passing to the `onNext(e)` function).
 
 But!
@@ -183,32 +183,32 @@ So deal with it!
 Consider that, we have a little bit more complex application state. For example:
 
 ```scala
-case class LeftModel(value: Int = 0) {
-  def copy(newValue: Int): LeftModel = LeftModel(value + newValue)
+case class LeftState(value: Int = 0) {
+  def copy(newValue: Int): LeftState = LeftState(value + newValue)
 }
 
-case class RightModel(value: Int = 0) {
-  def copy(newValue: Int): RightModel = RightModel(value + newValue)
+case class RightState(value: Int = 0) {
+  def copy(newValue: Int): RightState = RightState(value + newValue)
 }
 
-case class MainModel(left: LeftModel = LeftModel(), right: RightModel = RightModel()) {
+case class MainState(left: LeftState = LeftState(), right: RightState = RightState()) {
   ...
 }
 ```
-What do you think, how should MainModel.copy look like?
+What do you think, how should MainState.copy look like?
 Yes, it should delegate the call the underlying members' copy function:
 ```scala
-case class MainModel(left: LeftModel = LeftModel(), right: RightModel = RightModel()) {
-  def copy(newValue: Int): MainModel = MainModel(left = left.copy(newValue), right = right.copy(newValue))
+case class MainState(left: LeftState = LeftState(), right: RightState = RightState()) {
+  def copy(newValue: Int): MainState = MainState(left = left.copy(newValue), right = right.copy(newValue))
 }
 ```
 The rest of the code is the same as above. Because we generalized it already.
 In this case the output is:  
-MainModel(LeftModel(0),RightModel(0))  
-MainModel(LeftModel(10),RightModel(10))  
-MainModel(LeftModel(30),RightModel(30))  
-MainModel(LeftModel(60),RightModel(60))  
-MainModel(LeftModel(100),RightModel(100))
+MainState(LeftState(0),RightState(0))  
+MainState(LeftState(10),RightState(10))  
+MainState(LeftState(30),RightState(30))  
+MainState(LeftState(60),RightState(60))  
+MainState(LeftState(100),RightState(100))
 
 Great we dealt with the first problem. Let's jump to the second one. Try to represent every action which can happen in the application
 
@@ -233,7 +233,7 @@ case class SubValueEmitted(value: Int) extends Action
 ```
 
 So here is two actions, which the system should be able to react on. The requirement is that, if `AddValueEmitted(value)` action was received,
-the corresponding value of the LeftModel and the RightModel should be increased by the `value`. And the same behavior is expected for the 
+the corresponding value of the LeftState and the RightState should be increased by the `value`. And the same behavior is expected for the 
 `SubValueEmitted(value)` except that, it should decrease the value of both side of the state.
 
 First we need to modify the subject, because it is no longer accepts Ints, and we need to modify the copy method's signature also. 
@@ -242,49 +242,49 @@ And in this step let's rename it to `step(action)`
 class AppStream[T <: {def step(action : Action) : T}](initialValue: T) {
   val s = Subject[Action]()
 
-  s.scan(initialValue) { case (model, item) =>
-    model.step(item)
-  }.foreach { model =>
-    println(model)
+  s.scan(initialValue) { case (state, item) =>
+    state.step(item)
+  }.foreach { state =>
+    println(state)
   }
 }
 ```
 
-Now the app doesn't compile. It's normal, we need to modify the Models. As we saw above, the new `step(action)` function signature should be the following:
+Now the app doesn't compile. It's normal, we need to modify the States. As we saw above, the new `step(action)` function signature should be the following:
 ```scala
-case class LeftModel(value: Int = 0) {
-  def step(action: Action): LeftModel = ???
+case class LeftState(value: Int = 0) {
+  def step(action: Action): LeftState = ???
 }
-case class RightModel(value: Int = 0) {
-  def step(action: Action): RightModel = ???
+case class RightState(value: Int = 0) {
+  def step(action: Action): RightState = ???
 }
-case class MainModel(left: LeftModel = LeftModel(), right: RightModel = RightModel()) {
-  def step(action: Action): MainModel = MainModel(left = left.step(action), right = right.step(action))
+case class MainState(left: LeftState = LeftState(), right: RightState = RightState()) {
+  def step(action: Action): MainState = MainState(left = left.step(action), right = right.step(action))
 }
 ```
 
 We still left them unimplemented. How should the `step(action)` function work. It should somehow work with both of the action type: `AddValueEmitted(number)` and `SubValueEmitted(number)`.
 Pattern matching is the right way to do this:
 ```scala
-case class LeftModel(value: Int = 0) {
-  def step(action: Action): LeftModel = action match {
-    case AddValueEmitted(number) => LeftModel(value + number)
-    case SubValueEmitted(number) => LeftModel(value + number)
+case class LeftState(value: Int = 0) {
+  def step(action: Action): LeftState = action match {
+    case AddValueEmitted(number) => LeftState(value + number)
+    case SubValueEmitted(number) => LeftState(value + number)
   } 
 }
 
-case class RightModel(value: Int = 0) {
-  def step(action: Action): RightModel = action match {
-    case AddValueEmitted(number) => RightModel(value + number)
-    case SubValueEmitted(number) => RightModel(value + number)
+case class RightState(value: Int = 0) {
+  def step(action: Action): RightState = action match {
+    case AddValueEmitted(number) => RightState(value + number)
+    case SubValueEmitted(number) => RightState(value + number)
   }
 }
 ```
-In this example, both model reacts to both action type in the same way. They create a new instance of them, with the new value.  
+In this example, both state reacts to both action type in the same way. They create a new instance of them, with the new value.  
 Now the application compiles with this:
 ```scala
-object StreamModelAction extends App {
-  val app = new AppStream(MainModel())
+object StreamStateAction extends App {
+  val app = new AppStream(MainState())
 
   app.s.onNext(AddValueEmitted(10))
   app.s.onNext(AddValueEmitted(20))
@@ -293,11 +293,11 @@ object StreamModelAction extends App {
 }
 ```
 And the output:  
-MainModel(LeftModel(0),RightModel(0))  
-MainModel(LeftModel(10),RightModel(10))  
-MainModel(LeftModel(30),RightModel(30))  
-MainModel(LeftModel(60),RightModel(60))  
-MainModel(LeftModel(100),RightModel(100))  
+MainState(LeftState(0),RightState(0))  
+MainState(LeftState(10),RightState(10))  
+MainState(LeftState(30),RightState(30))  
+MainState(LeftState(60),RightState(60))  
+MainState(LeftState(100),RightState(100))  
 
 ### Conclusion
 I think, with this basics, we can start to build our UI framework, which works with immutable persistent data structure as application state.

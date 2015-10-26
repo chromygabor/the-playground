@@ -1,4 +1,4 @@
-package com.chromy.frpui.examples.basics
+package com.chromy.frpui.examples.basics.basic1
 
 import rx.lang.scala.Subject
 

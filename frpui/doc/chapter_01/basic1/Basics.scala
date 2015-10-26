@@ -1,4 +1,4 @@
-package com.chromy.frpui.examples.basics
+package com.chromy.frpui.examples.basics.basic1
 
 /**
  * Created by cry on 2015.10.21..
