@@ -25,9 +25,9 @@ case class Child[M, B](lens: Lens[M, B]) {
 
     list.map { input =>
       input match {
-        case e: BaseModel if (prevSet(input)) => e.step(action).asInstanceOf[B]
-        case e: BaseModel if (!prevSet(input)) =>
+        case e: BaseModel with Initializable if (!prevSet(input)) =>
           e.step(Init).step(action).asInstanceOf[B]
+        case e: BaseModel => e.step(action).asInstanceOf[B]
         case e => e
       }
     }
@@ -37,9 +37,9 @@ case class Child[M, B](lens: Lens[M, B]) {
     val prevSet = prevMap.values.toSet
     map.map { case(key, item) => 
       item match {
-        case (value: BaseModel) if(prevSet(item)) => (key, value.step(action).asInstanceOf[B])
-        case (value: BaseModel) if(!prevSet(item)) => 
+        case (value: BaseModel with Initializable) if(!prevSet(item)) => 
           (key, value.step(Init).step(action).asInstanceOf[B])
+        case (value: BaseModel) => (key, value.step(action).asInstanceOf[B])
         case e => (key, e)
       }
     }
