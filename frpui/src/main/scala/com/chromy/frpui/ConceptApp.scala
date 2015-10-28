@@ -1,8 +1,7 @@
 package com.chromy.frpui
 
-import com.chromy.frpui.util.DiffUtils._
-import com.chromy.frpui.core.Updater.Simple
 import com.chromy.frpui.core._
+import com.chromy.frpui.util.DiffUtils._
 import monocle.macros.GenLens
 import rx.lang.scala.Subject
 
@@ -13,6 +12,7 @@ import scala.collection.mutable.ArrayBuffer
  */
 object ConceptApp extends App {
 
+  case object Nop extends Action
   case class IncrementValue(number: Int, uid: Uid) extends Action
 
   case class DecrementValue(number: Int, uid: Uid) extends Action
@@ -22,23 +22,27 @@ object ConceptApp extends App {
   case class AddValue(name: Uid) extends Action
 
   case class LeftSubmodel(value: Int = 0, uid: Uid = Uid()) extends Model[LeftSubmodel] {
-    override val handle = Simple {
+    override def handle(context: Context): Updater[LeftSubmodel] = Updater {
+      case Init => this
       case IncrementValue(number, this.uid) => copy(value = value + number)
       case DecrementValue(number, this.uid) => copy(value = value + number)
     }
+     
   }
 
   case class RightSubmodel(value: Int = 0, uid: Uid = Uid()) extends Model[RightSubmodel] {
-    override val handle = Simple {
+    override def handle(context: Context): Updater[RightSubmodel] = Updater {
+      case Init => this
       case IncrementValue(number, this.uid) => copy(value = value + number)
       case DecrementValue(number, this.uid) => copy(value = value + number)
     }
+    
   }
 
   case class MainModel(left: List[LeftSubmodel] = Nil, right: Map[Uid, RightSubmodel] = Map(), uid: Uid = Uid()) extends Model[MainModel] {
     override def children = MainModel.children
 
-    override val handle = Simple {
+    override def handle(context: Context): Updater[MainModel] = Updater {
       case AddItem(uid) => copy(left = LeftSubmodel(uid = uid) :: left)
       case AddValue(uid) => copy(right = right.updated(uid, RightSubmodel(uid = uid)))
     }
@@ -129,7 +133,12 @@ object ConceptApp extends App {
   val render = SideEffectChain[MainModel]()
 
   val stream = s.scan(initialModel) { (model, action) =>
-    model.step(action)
+    println(s"================== Action received: $action")
+    model.step(action)(new Context {
+      override def getService[B <: Service[B] : Manifest]: B = ???
+
+      override def onAction(action: Action): Unit = s.onNext(action)
+    })
   }.subscribe({ model =>
     render.update(model).run()
   })
@@ -138,13 +147,13 @@ object ConceptApp extends App {
 
   val u1 = Uid()
   s.onNext(AddItem(u1))
-  s.onNext(IncrementValue(2, u1))
-  s.onNext(IncrementValue(5, u1))
+//  s.onNext(IncrementValue(2, u1))
+//  s.onNext(IncrementValue(5, u1))
 
   val u2 = Uid()
   s.onNext(AddValue(u2))
-  s.onNext(IncrementValue(7, u2))
-  s.onNext(IncrementValue(9, u2))
-  s.onNext(IncrementValue(11, u2))
+//  s.onNext(IncrementValue(7, u2))
+//  s.onNext(IncrementValue(9, u2))
+//  s.onNext(IncrementValue(11, u2))
 
 }
