@@ -1,11 +1,7 @@
 package com.chromy.frpui
 
-import java.util.concurrent.atomic.AtomicReference
-
 import com.chromy.frpui.ConceptApp2.ServiceModel
-import com.chromy.frpui.core.Model
-import com.chromy.frpui.core.Updater.Simple
-import com.chromy.frpui.core._
+import com.chromy.frpui.core.{Model, _}
 import monocle.macros.GenLens
 import rx.lang.scala.{Observer, Subject}
 
@@ -13,16 +9,21 @@ import rx.lang.scala.{Observer, Subject}
  * Created by cry on 2015.10.15..
  */
 
-case class Service[B <: Model[B]](model: B)
-case class ServiceAdded[B <:  Model[B]](serviceName: String, service: Service[B]) extends Action
-trait ServiceBuilder[A <: Model[A]] {
+trait Service[B <: BaseModel] extends BaseModel {
+  type M = B
+}
+
+case class ServiceAdded[B <: Service[B]](serviceName: String, service: Service[B]) extends Action
+
+trait ServiceBuilder[A <: Service[A]] {
   def initialValue: Service[A]
+
   def name: String
 }
 
 object ServiceBuilder {
-  def singleton[A <: Model[A] : Manifest](iInitialValue: A): ServiceBuilder[A] = new ServiceBuilder[A] {
-    override lazy val initialValue: Service[A] = Service(iInitialValue)
+  def singleton[A <: Service[A] : Manifest](iInitialValue: A): ServiceBuilder[A] = new ServiceBuilder[A] {
+    override lazy val initialValue: Service[A] = iInitialValue
 
     override lazy val name: String = {
       val m = manifest[A]
@@ -33,7 +34,7 @@ object ServiceBuilder {
 
 object Services {
   lazy val services = Map[String, ServiceBuilder[_]](
-    "com.chromy.frpui.ConceptApp2.ServiceModel" -> ServiceBuilder.singleton(ServiceModel())
+    "com.chromy.frpui.ConceptApp2$ServiceModel" -> ServiceBuilder.singleton(ServiceModel())
   )
 }
 
@@ -41,47 +42,60 @@ case class Defer[A <: Model[A], V](value: V, f: (V, A) => A) extends Action
 
 object ConceptApp2 extends App {
 
-  def getService[A <: Model[A], B <: Model[B]](uid: Uid): (Context) => A = ???
-  
   def newContext(model: AppModel, iChannel: Observer[Action]) = new Context {
     def onAction(action: Action): Unit = {
       iChannel.onNext(action)
     }
-    
-    override def getService[B <: Model[B] : Manifest](serviceName: String): B = {
-      val service = model.services.getOrElse(serviceName, {
-        val sb = Services.services.getOrElse(serviceName, throw new IllegalStateException(s"Service was not found in config: $serviceName"))
-        val srv = model.services.getOrElse(sb.name, sb.initialValue)
-        val m = manifest[B]
-        if(m.runtimeClass.isInstance(srv.model)) {
-          s.onNext(ServiceAdded(serviceName, srv.asInstanceOf[Service[B]]))
+
+    override def getService[B <: Service[B] : Manifest]: B = {
+      val m = manifest[B]
+      val serviceName = m.runtimeClass.getName
+      val sb = Services.services.getOrElse(serviceName, throw new IllegalStateException(s"Service was not found in config: $serviceName"))
+      val serviceKey = sb.name
+
+      val service = model.services.getOrElse(serviceKey, {
+        if (m.runtimeClass.isInstance(sb.initialValue)) {
+          val srv = sb.initialValue.asInstanceOf[B].step(Init)(this)
+          s.onNext(ServiceAdded(serviceKey, srv))
           srv
         } else {
           throw new IllegalStateException("Service builder type doesn't fit")
         }
       })
-      service.model.asInstanceOf[B]
+      service.asInstanceOf[B]
     }
   }
-  
-  case class ServiceModel(uid: Uid = Uid()) extends Model[ServiceModel] {
+
+  case class ServiceModel(uid: Uid = Uid()) extends Service[ServiceModel] {
     def setConfig(configName: String, value: String) = ???
+
+    override def handle(context: Context): Updater[ServiceModel] = Updater{
+      case Init =>
+        println(s"Service initialized")
+        this
+    }
   }
-  
-  case class MainModel(value: Int, uid: Uid = Uid()) extends Model[MainModel] {
-    val service = getService[ServiceModel, MainModel](uid)
+
+  case class MainModel(value: Int = 0, uid: Uid = Uid()) extends Model[MainModel] {
+    override def handle(context: Context): Updater[MainModel] = Updater {
+      case Init =>
+        println(s"MainModel initialized")
+        val s = context.getService[ServiceModel]
+        this
+    }
   }
-  
-  case class AppModel(services: Map[String, Service[_]] = Map(), uid: Uid = Uid()) extends Model[AppModel] {
+
+  case class AppModel(app: MainModel = MainModel(), services: Map[String, Service[_]] = Map(), uid: Uid = Uid()) extends Model[AppModel] {
     override def children = AppModel.children
 
-    override val handle: Updater[AppModel] = Simple { 
-      case ServiceAdded(name, service) => copy(services.updated(name, service))
+    override def handle(context: Context): Updater[AppModel] = Updater {
+      case ServiceAdded(name, service) => copy(services = services.updated(name, service))
     }
   }
 
   object AppModel {
     val children = List(
+      Child(GenLens[AppModel](_.app)),
       Child(GenLens[AppModel](_.services))
     )
   }
@@ -91,23 +105,24 @@ object ConceptApp2 extends App {
   val render = SideEffectChain[AppModel]()
 
   val stream = s.scan(initialModel) { (model, action) =>
+    println(s"======= Action received: $action")
     implicit val context = newContext(model, s)
     model.step(action)
   }.subscribe({ model =>
     render.update(model).run()
   })
 
-  
-  
+
   val u1 = Uid()
-//  s.onNext(AddItem(u1))
-//  s.onNext(IncrementValue(2, u1))
-//  s.onNext(IncrementValue(5, u1))
+  s.onNext(Init)
+  // s.onNext(AddItem(u1))
+  // s.onNext(IncrementValue(2, u1))
+  // s.onNext(IncrementValue(5, u1))
 
   val u2 = Uid()
-//  s.onNext(AddValue(u2))
-//  s.onNext(IncrementValue(7, u2))
-//  s.onNext(IncrementValue(9, u2))
-//  s.onNext(IncrementValue(11, u2))
+  //  s.onNext(AddValue(u2))
+  //  s.onNext(IncrementValue(7, u2))
+  //  s.onNext(IncrementValue(9, u2))
+  //  s.onNext(IncrementValue(11, u2))
 
 }
