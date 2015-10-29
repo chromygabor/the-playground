@@ -1,6 +1,6 @@
 package com.chromy.frpui.core
 
-import com.chromy.frpui.Service
+import com.chromy.frpui.core.BaseModel.Defer
 import monocle._
 
 /**
@@ -8,11 +8,12 @@ import monocle._
  */
 
 case object Init extends Action
+case class Targeted(target: Uid, action: Action) extends Action
 
 trait Initializable
 
 trait Context {
-  def getService[B <: Service[B] : Manifest]: B
+  def getService[B : Manifest]: B
 
   def onAction(action: Action): Unit
 }
@@ -48,7 +49,12 @@ case class Child[M, B](lens: Lens[M, B]) {
   def step(action: Action, previousModel: M, model: M)(implicit context: Context): M = {
     val newModel = lens.get(model) match {
       case m: BaseModel =>
-        m.step(action)
+        action match {
+          case d: Defer[M] if m.uid == d.uid =>
+            d.f(context, m.asInstanceOf[M])
+          case Targeted(m.uid, action) => m.step(action)
+          case _ => m.step(action) 
+        }
       case s: Seq[B] =>
         val ps = lens.get(previousModel).asInstanceOf[s.type]
         updateSeq(action, ps, s)
@@ -80,6 +86,8 @@ object Updater {
 
 
 object BaseModel {
+  case class Defer[M](uid: Uid, f: (Context, M) => M) extends Action
+
   def step[A <: BaseModel](action: Action, model: A, children: List[Child[A, _]], handle: Updater[A])(implicit context: Context): A = {
     val handler = handle.handle
     val previousModel = model
@@ -96,13 +104,57 @@ trait BaseModel {
 
   val uid: Uid
 
-  def children: List[Child[M, _]] = Nil
+  protected def children: List[Child[M, _]] = Nil
 
   def step(action: Action)(implicit context: Context): M = BaseModel.step[M](action, this.asInstanceOf[M], children, handle(context))
 
-  def handle(context: Context): Updater[M]
+  protected def handle(implicit context: Context): Updater[M]
+
+  def defer(f: (Context, M) => M)(implicit context: Context): Unit = {
+    context.onAction(Defer(uid, f))
+  }
+  
 }
 
 trait Model[B <: BaseModel] extends BaseModel with Initializable {
   type M = B
+}
+
+/**
+ * Service concept
+ */
+trait BaseService extends BaseModel {
+  type I
+
+  def api(context: Context): I
+}
+
+trait Service[INTF, MODEL <: BaseModel] extends BaseService {
+  type I = INTF
+  type M = MODEL
+}
+
+
+trait ServiceBuilder[A <: BaseService] {
+  def initialValue: A
+
+  def key: String
+
+  def clazz: Class[A#I]
+}
+
+object ServiceBuilder {
+
+  case class ServiceAdded[B <: BaseService](serviceName: String, service: B) extends Action
+
+  def singleton[A <: BaseService : Manifest](iInitialValue: A)(implicit ev: Manifest[A#I]): ServiceBuilder[A] = new ServiceBuilder[A] {
+    val m = manifest[A#I]
+    override lazy val initialValue: A = iInitialValue
+
+    override lazy val key: String = {
+      m.runtimeClass.getName
+    }
+
+    override val clazz = m.runtimeClass.asInstanceOf[Class[A#I]]
+  }
 }
