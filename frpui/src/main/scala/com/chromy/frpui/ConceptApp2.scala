@@ -1,120 +1,90 @@
 package com.chromy.frpui
 
-import com.chromy.frpui.ConceptApp2.ServiceModel
 import com.chromy.frpui.core.{Model, _}
-import monocle.macros.GenLens
-import rx.lang.scala.{Observer, Subject}
+
+import scala.concurrent.Future
 
 /**
  * Created by cry on 2015.10.15..
  */
-
-trait Service[B <: BaseModel] extends BaseModel {
-  type M = B
+object ConfigService {
+  case class Changed(config: Map[String, String] = Map.empty) extends Action
+}
+trait ConfigService {
+  def set(key: String, value: String): Unit
+  def config: Map[String, String]
+  def subscribe(uid: Uid): Unit
 }
 
-case class ServiceAdded[B <: Service[B]](serviceName: String, service: Service[B]) extends Action
+case class ConfigServiceImpl(uid: Uid = Uid(), config: Map[String, String] = Map("key1" -> "default1", "key2" -> "default2" )) extends Service[ConfigService, ConfigServiceImpl] {
 
-trait ServiceBuilder[A <: Service[A]] {
-  def initialValue: Service[A]
+  case class ConfigSet(key: String, value: String) extends Action
+  
+  override def handle(implicit context: Context): Updater[ConfigServiceImpl] = Updater {
+    case Init =>
+      println(s"Service initialized")
+      this
+    case ConfigSet(key: String, value: String) =>
+      val newConfig = config.updated(key, value) 
+      context.onAction(ConfigService.Changed(newConfig))
+      copy(config = newConfig)
+  }
 
-  def name: String
-}
+  override def api(context: Context): ConfigService = new ConfigService {
+    override def set(key: String, value: String): Unit = context.onAction(ConfigSet(key, value))
 
-object ServiceBuilder {
-  def singleton[A <: Service[A] : Manifest](iInitialValue: A): ServiceBuilder[A] = new ServiceBuilder[A] {
-    override lazy val initialValue: Service[A] = iInitialValue
+    override def subscribe(uid: Uid): Unit = context.onAction(Targeted(uid, ConfigService.Changed(config)))
 
-    override lazy val name: String = {
-      val m = manifest[A]
-      m.runtimeClass.getName
-    }
+    override lazy val config: Map[String, String] = ConfigServiceImpl.this.config
   }
 }
 
-object Services {
-  lazy val services = Map[String, ServiceBuilder[_]](
-    "com.chromy.frpui.ConceptApp2$ServiceModel" -> ServiceBuilder.singleton(ServiceModel())
-  )
+case class MainModel(value: Int = 0, uid: Uid = Uid()) extends Model[MainModel] {
+  
+  override def handle(implicit context: Context): Updater[MainModel] = Updater {
+    case Init =>
+      context.getService[ConfigService].subscribe(uid)
+      this
+    case ConfigService.Changed(config) =>
+      println(s"Config was changed we start a future task: $config")
+      
+      import scala.concurrent.ExecutionContext.Implicits.global
+
+      val service = context.getService[ConfigService]
+      
+      if(!service.config.contains("Later")) {
+        println("Before sleep: " + service.config.get("Later"))
+//        Future {
+//          println("It is sleeping")
+//          Thread.sleep(3000)
+//          println("It is done with sleeping")
+//          defer { (laterContext, laterModel) =>
+//            println("You can see, we changed the config later than we started the Sleep")
+//            println("After the sleep" + laterContext.getService[ConfigService].config.get("Later"))
+//            laterModel
+//          }
+//          this
+//        }
+        context.getService[ConfigService].set("Later", "test")
+      }
+      this
+  }
 }
 
-case class Defer[A <: Model[A], V](value: V, f: (V, A) => A) extends Action
-
+/**
+ * Main app
+ */
 object ConceptApp2 extends App {
 
-  def newContext(model: AppModel, iChannel: Observer[Action]) = new Context {
-    def onAction(action: Action): Unit = {
-      iChannel.onNext(action)
-    }
+  lazy val services = Map[Class[_], ServiceBuilder[_]](
+    classOf[ConfigService] -> ServiceBuilder.singleton(ConfigServiceImpl())
+  )
 
-    override def getService[B <: Service[B] : Manifest]: B = {
-      val m = manifest[B]
-      val serviceName = m.runtimeClass.getName
-      val sb = Services.services.getOrElse(serviceName, throw new IllegalStateException(s"Service was not found in config: $serviceName"))
-      val serviceKey = sb.name
 
-      val service = model.services.getOrElse(serviceKey, {
-        if (m.runtimeClass.isInstance(sb.initialValue)) {
-          val srv = sb.initialValue.asInstanceOf[B].step(Init)(this)
-          s.onNext(ServiceAdded(serviceKey, srv))
-          srv
-        } else {
-          throw new IllegalStateException("Service builder type doesn't fit")
-        }
-      })
-      service.asInstanceOf[B]
-    }
-  }
-
-  case class ServiceModel(uid: Uid = Uid()) extends Service[ServiceModel] {
-    def setConfig(configName: String, value: String) = ???
-
-    override def handle(context: Context): Updater[ServiceModel] = Updater{
-      case Init =>
-        println(s"Service initialized")
-        this
-    }
-  }
-
-  case class MainModel(value: Int = 0, uid: Uid = Uid()) extends Model[MainModel] {
-    override def handle(context: Context): Updater[MainModel] = Updater {
-      case Init =>
-        println(s"MainModel initialized")
-        val s = context.getService[ServiceModel]
-        this
-    }
-  }
-
-  case class AppModel(app: MainModel = MainModel(), services: Map[String, Service[_]] = Map(), uid: Uid = Uid()) extends Model[AppModel] {
-    override def children = AppModel.children
-
-    override def handle(context: Context): Updater[AppModel] = Updater {
-      case ServiceAdded(name, service) => copy(services = services.updated(name, service))
-    }
-  }
-
-  object AppModel {
-    val children = List(
-      Child(GenLens[AppModel](_.app)),
-      Child(GenLens[AppModel](_.services))
-    )
-  }
-
-  val s = Subject[Action]
-  val initialModel = AppModel()
-  val render = SideEffectChain[AppModel]()
-
-  val stream = s.scan(initialModel) { (model, action) =>
-    println(s"======= Action received: $action")
-    implicit val context = newContext(model, s)
-    model.step(action)
-  }.subscribe({ model =>
-    render.update(model).run()
-  })
-
+  val app = new FrpApp(MainModel(), services)
 
   val u1 = Uid()
-  s.onNext(Init)
+  app.onNext(Init)
   // s.onNext(AddItem(u1))
   // s.onNext(IncrementValue(2, u1))
   // s.onNext(IncrementValue(5, u1))
@@ -125,4 +95,5 @@ object ConceptApp2 extends App {
   //  s.onNext(IncrementValue(9, u2))
   //  s.onNext(IncrementValue(11, u2))
 
+  Thread.sleep(5000)
 }
