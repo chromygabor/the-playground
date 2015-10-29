@@ -27,6 +27,7 @@ case class ConfigServiceImpl(uid: Uid = Uid(), config: Map[String, String] = Map
     case ConfigSet(key: String, value: String) =>
       val newConfig = config.updated(key, value) 
       context.onAction(ConfigService.Changed(newConfig))
+      println(s"newConfig: $newConfig")
       copy(config = newConfig)
   }
 
@@ -46,25 +47,27 @@ case class MainModel(value: Int = 0, uid: Uid = Uid()) extends Model[MainModel] 
       context.getService[ConfigService].subscribe(uid)
       this
     case ConfigService.Changed(config) =>
-      println(s"Config was changed we start a future task: $config")
       
       import scala.concurrent.ExecutionContext.Implicits.global
 
       val service = context.getService[ConfigService]
+
+//      println(s"config:         $config")
+//      println(s"service.config: ${service.config}")
       
       if(!service.config.contains("Later")) {
         println("Before sleep: " + service.config.get("Later"))
-//        Future {
-//          println("It is sleeping")
-//          Thread.sleep(3000)
-//          println("It is done with sleeping")
-//          defer { (laterContext, laterModel) =>
-//            println("You can see, we changed the config later than we started the Sleep")
-//            println("After the sleep" + laterContext.getService[ConfigService].config.get("Later"))
-//            laterModel
-//          }
-//          this
-//        }
+        Future {
+          println("It is sleeping")
+          Thread.sleep(3000)
+          println("It is done with sleeping")
+          defer { (laterContext, laterModel) =>
+            println("You can see, we changed the config later than we started the Sleep")
+            println("After the sleep: " + laterContext.getService[ConfigService].config.get("Later"))
+            laterModel
+          }
+          this
+        }
         context.getService[ConfigService].set("Later", "test")
       }
       this
