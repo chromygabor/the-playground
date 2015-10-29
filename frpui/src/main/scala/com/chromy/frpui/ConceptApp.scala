@@ -22,7 +22,7 @@ object ConceptApp extends App {
   case class AddValue(name: Uid) extends Action
 
   case class LeftSubmodel(value: Int = 0, uid: Uid = Uid()) extends Model[LeftSubmodel] {
-    override def handle(context: Context): Updater[LeftSubmodel] = Updater {
+    override def handle(implicit context: Context): Updater[LeftSubmodel] = Updater {
       case Init => this
       case IncrementValue(number, this.uid) => copy(value = value + number)
       case DecrementValue(number, this.uid) => copy(value = value + number)
@@ -31,7 +31,7 @@ object ConceptApp extends App {
   }
 
   case class RightSubmodel(value: Int = 0, uid: Uid = Uid()) extends Model[RightSubmodel] {
-    override def handle(context: Context): Updater[RightSubmodel] = Updater {
+    override def handle(implicit context: Context): Updater[RightSubmodel] = Updater {
       case Init => this
       case IncrementValue(number, this.uid) => copy(value = value + number)
       case DecrementValue(number, this.uid) => copy(value = value + number)
@@ -42,7 +42,7 @@ object ConceptApp extends App {
   case class MainModel(left: List[LeftSubmodel] = Nil, right: Map[Uid, RightSubmodel] = Map(), uid: Uid = Uid()) extends Model[MainModel] {
     override def children = MainModel.children
 
-    override def handle(context: Context): Updater[MainModel] = Updater {
+    override def handle(implicit context: Context): Updater[MainModel] = Updater {
       case AddItem(uid) => copy(left = LeftSubmodel(uid = uid) :: left)
       case AddValue(uid) => copy(right = right.updated(uid, RightSubmodel(uid = uid)))
     }
@@ -135,7 +135,7 @@ object ConceptApp extends App {
   val stream = s.scan(initialModel) { (model, action) =>
     println(s"================== Action received: $action")
     model.step(action)(new Context {
-      override def getService[B <: Service[B] : Manifest]: B = ???
+      override def getService[B : Manifest]: B = ???
 
       override def onAction(action: Action): Unit = s.onNext(action)
     })
