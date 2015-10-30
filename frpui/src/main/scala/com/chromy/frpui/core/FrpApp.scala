@@ -10,7 +10,7 @@ import rx.lang.scala.{Subject, Observer}
 //oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
 //o App
 //oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
-class FrpApp[M](initialState: M, services: Map[Class[_], ServiceBuilder[_]]) {
+class FrpApp[M](iS: M, services: Map[Class[_], ServiceBuilder[_]]) {
 
   def onNext(action: Action): Unit = {
     s.onNext(action)
@@ -42,7 +42,7 @@ class FrpApp[M](initialState: M, services: Map[Class[_], ServiceBuilder[_]]) {
     }
   }
 
-  case class AppModel(app: M = initialState, services: Map[String, BaseService] = Map(), uid: Uid = Uid()) extends Model[AppModel] {
+  private case class AppModel(app: M = iS, services: Map[String, BaseService] = Map(), uid: Uid = Uid()) extends Model[AppModel] {
     override def children = List(
       Child(GenLens[AppModel](_.app)),
       Child(GenLens[AppModel](_.services))
@@ -55,14 +55,16 @@ class FrpApp[M](initialState: M, services: Map[Class[_], ServiceBuilder[_]]) {
   }
 
   private[this] val s = Subject[Action]
-  private[this] val render = SideEffectChain[AppModel]()
+  private[this] val appRender = SideEffectChain[AppModel]()
 
   private[this] val stream = s.observeOn(ComputationScheduler()).scan(AppModel()) { (model, action) =>
     println(s"======= Action received: $action")
     implicit val context = newContext(model, s)
     model.step(action)
   }.observeOn(ImmediateScheduler()).subscribe({ model =>
-    render.update(model).run()
+    appRender.update(model).run()
   })
 
+  val render: SideEffectChain[M] = appRender.map(_.app)
+  val initialState:M = iS
 }
