@@ -1,6 +1,7 @@
 package com.chromy.frpui
 
-import com.chromy.frpui.core.{Model, _}
+import com.chromy.frpui.fw.core.{Model, _}
+import rx.lang.scala.schedulers.ImmediateScheduler
 
 import scala.concurrent.Future
 
@@ -8,7 +9,7 @@ import scala.concurrent.Future
  * Created by cry on 2015.10.15..
  */
 object ConfigService {
-  case class Changed(config: Map[String, String] = Map.empty) extends Action
+  case class Changed(config: Map[String, String] = Map.empty) extends Event
 }
 trait ConfigService {
   def set(key: String, value: String): Unit
@@ -18,9 +19,9 @@ trait ConfigService {
 
 case class ConfigServiceImpl(uid: Uid = Uid(), config: Map[String, String] = Map("key1" -> "default1", "key2" -> "default2" )) extends Service[ConfigService, ConfigServiceImpl] {
 
-  case class ConfigSet(key: String, value: String) extends Action
+  case class ConfigSet(key: String, value: String) extends Event
   
-  override def handle(implicit context: Context): Updater[ConfigServiceImpl] = Updater {
+  override def handle(implicit context: Context): EventHandler[ConfigServiceImpl] = EventHandler {
     case Init =>
       println(s"Service initialized")
       this
@@ -42,7 +43,7 @@ case class ConfigServiceImpl(uid: Uid = Uid(), config: Map[String, String] = Map
 
 case class MainModel(value: Int = 0, uid: Uid = Uid()) extends Model[MainModel] {
   
-  override def handle(implicit context: Context): Updater[MainModel] = Updater {
+  override def handle(implicit context: Context): EventHandler[MainModel] = EventHandler {
     case Init =>
       context.getService[ConfigService].subscribe(uid)
       this
@@ -61,11 +62,11 @@ case class MainModel(value: Int = 0, uid: Uid = Uid()) extends Model[MainModel] 
           println("It is sleeping")
           Thread.sleep(3000)
           println("It is done with sleeping")
-          defer { (laterContext, laterModel) =>
-            println("You can see, we changed the config later than we started the Sleep")
-            println("After the sleep: " + laterContext.getService[ConfigService].config.get("Later"))
-            laterModel
-          }
+//          defer { (laterContext, laterModel) =>
+//            println("You can see, we changed the config later than we started the Sleep")
+//            println("After the sleep: " + laterContext.getService[ConfigService].config.get("Later"))
+//            laterModel
+//          }
           this
         }
         context.getService[ConfigService].set("Later", "test")
@@ -84,7 +85,7 @@ object ConceptApp2 extends App {
   )
 
 
-  val app = new FrpApp(MainModel(), services)
+  val app = new FrpApp(state = MainModel(), services = services, sideEffectScheduler = ImmediateScheduler())
 
   val u1 = Uid()
   app.onNext(Init)

@@ -1,4 +1,4 @@
-package com.chromy.frpui.core
+package com.chromy.frpui.fw.core
 
 import monocle.macros.GenLens
 import rx.lang.scala.schedulers.{ComputationScheduler, TrampolineScheduler, ImmediateScheduler}

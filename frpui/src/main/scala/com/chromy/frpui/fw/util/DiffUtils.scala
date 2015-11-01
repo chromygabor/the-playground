@@ -1,6 +1,6 @@
-package com.chromy.frpui.util
+package com.chromy.frpui.fw.util
 
-import com.chromy.frpui.util.DiffUtils._
+import com.chromy.frpui.fw.util.DiffUtils._
 import org.scalatest.FunSpecLike
 
 import scala.annotation.tailrec

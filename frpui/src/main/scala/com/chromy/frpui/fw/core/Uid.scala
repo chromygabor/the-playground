@@ -1,4 +1,4 @@
-package com.chromy.frpui.core
+package com.chromy.frpui.fw.core
 
 import java.util.concurrent.atomic.AtomicInteger
 

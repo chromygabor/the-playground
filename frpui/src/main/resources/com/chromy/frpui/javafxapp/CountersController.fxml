@@ -5,7 +5,7 @@
 <?import javafx.scene.layout.*?>
 
 <HBox xmlns="http://javafx.com/javafx/8.0.40" xmlns:fx="http://javafx.com/fxml/1"
-      fx:controller="com.chromy.reactiveui.myjavafx.CountersController">
+      fx:controller="com.chromy.frpui.javafxapp.CountersController">
     <children>
         <VBox prefHeight="200.0" prefWidth="400.0">
             <children>
@@ -17,6 +17,6 @@
                 <FlowPane fx:id="_pCounters" prefHeight="200.0" prefWidth="200.0"/>
             </children>
         </VBox>
-        <fx:include fx:id="_counterNavigator" source="CounterNavigatorController.fxml"></fx:include>
+        <!-- <fx:include fx:id="_counterNavigator" source="CounterNavigatorController.fxml"></fx:include> -->
     </children>
 </HBox>

@@ -1,8 +1,8 @@
-package com.chromy.frpui.core
+package com.chromy.frpui.fw.core
 
 import monocle.macros.GenLens
 import rx.lang.scala.schedulers.{ImmediateScheduler, ComputationScheduler}
-import rx.lang.scala.{Subject, Observer}
+import rx.lang.scala.{Scheduler, Subject, Observer}
 
 /**
  * Created by cry on 2015.10.29..
@@ -10,14 +10,14 @@ import rx.lang.scala.{Subject, Observer}
 //oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
 //o App
 //oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
-class FrpApp[M](iS: M, services: Map[Class[_], ServiceBuilder[_]]) {
+class FrpApp[M](state: M, services: Map[Class[_], ServiceBuilder[_]] = Map.empty, updateScheduler: Scheduler = ComputationScheduler(), renderScheduler: Scheduler = ComputationScheduler(), sideEffectScheduler: Scheduler) {
 
-  def onNext(action: Action): Unit = {
+  val onNext: Event => Unit = { action =>
     s.onNext(action)
   }
 
-  private[this] def newContext(model: AppModel, iChannel: Observer[Action]) = new Context {
-    def onAction(action: Action): Unit = {
+  private[this] def newContext(model: AppModel, iChannel: Observer[Event]) = new Context {
+    def onAction(action: Event): Unit = {
       iChannel.onNext(action)
     }
 
@@ -42,29 +42,29 @@ class FrpApp[M](iS: M, services: Map[Class[_], ServiceBuilder[_]]) {
     }
   }
 
-  private case class AppModel(app: M = iS, services: Map[String, BaseService] = Map(), uid: Uid = Uid()) extends Model[AppModel] {
-    override def children = List(
+  private case class AppModel(app: M = state, services: Map[String, BaseService] = Map(), uid: Uid = Uid()) extends Model[AppModel] {
+    override lazy val children = List(
       Child(GenLens[AppModel](_.app)),
       Child(GenLens[AppModel](_.services))
     )
 
-    override def handle(implicit context: Context): Updater[AppModel] = Updater {
+    override def handle(implicit context: Context): EventHandler[AppModel] = EventHandler {
       case ServiceBuilder.ServiceAdded(key, service) => copy(services = services.updated(key, service))
       case _ => this
     }
   }
 
-  private[this] val s = Subject[Action]
+  private[this] val s = Subject[Event]
   private[this] val appRender = SideEffectChain[AppModel]()
 
-  private[this] val stream = s.observeOn(ComputationScheduler()).scan(AppModel()) { (model, action) =>
+  private[this] val stream = s.observeOn(updateScheduler).scan(AppModel()) { (model, action) =>
     println(s"======= Action received: $action")
     implicit val context = newContext(model, s)
     model.step(action)
-  }.observeOn(ImmediateScheduler()).subscribe({ model =>
-    appRender.update(model).run()
-  })
+  }.drop(1).observeOn(renderScheduler).map { model =>
+    appRender.update(model)
+  }.observeOn(sideEffectScheduler).subscribe({ _.run() })
 
   val render: SideEffectChain[M] = appRender.map(_.app)
-  val initialState:M = iS
+  val initialState:M = state
 }

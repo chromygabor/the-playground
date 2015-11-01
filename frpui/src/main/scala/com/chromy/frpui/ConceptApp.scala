@@ -1,7 +1,7 @@
 package com.chromy.frpui
 
-import com.chromy.frpui.core._
-import com.chromy.frpui.util.DiffUtils._
+import com.chromy.frpui.fw.core._
+import com.chromy.frpui.fw.util.DiffUtils._
 import monocle.macros.GenLens
 import rx.lang.scala.Subject
 
@@ -12,17 +12,17 @@ import scala.collection.mutable.ArrayBuffer
  */
 object ConceptApp extends App {
 
-  case object Nop extends Action
-  case class IncrementValue(number: Int, uid: Uid) extends Action
+  case object Nop extends Event
+  case class IncrementValue(number: Int, uid: Uid) extends Event
 
-  case class DecrementValue(number: Int, uid: Uid) extends Action
+  case class DecrementValue(number: Int, uid: Uid) extends Event
 
-  case class AddItem(uid: Uid) extends Action
+  case class AddItem(uid: Uid) extends Event
 
-  case class AddValue(name: Uid) extends Action
+  case class AddValue(name: Uid) extends Event
 
   case class LeftSubmodel(value: Int = 0, uid: Uid = Uid()) extends Model[LeftSubmodel] {
-    override def handle(implicit context: Context): Updater[LeftSubmodel] = Updater {
+    override def handle(implicit context: Context): EventHandler[LeftSubmodel] = EventHandler {
       case Init => this
       case IncrementValue(number, this.uid) => copy(value = value + number)
       case DecrementValue(number, this.uid) => copy(value = value + number)
@@ -31,7 +31,7 @@ object ConceptApp extends App {
   }
 
   case class RightSubmodel(value: Int = 0, uid: Uid = Uid()) extends Model[RightSubmodel] {
-    override def handle(implicit context: Context): Updater[RightSubmodel] = Updater {
+    override def handle(implicit context: Context): EventHandler[RightSubmodel] = EventHandler {
       case Init => this
       case IncrementValue(number, this.uid) => copy(value = value + number)
       case DecrementValue(number, this.uid) => copy(value = value + number)
@@ -42,7 +42,7 @@ object ConceptApp extends App {
   case class MainModel(left: List[LeftSubmodel] = Nil, right: Map[Uid, RightSubmodel] = Map(), uid: Uid = Uid()) extends Model[MainModel] {
     override def children = MainModel.children
 
-    override def handle(implicit context: Context): Updater[MainModel] = Updater {
+    override def handle(implicit context: Context): EventHandler[MainModel] = EventHandler {
       case AddItem(uid) => copy(left = LeftSubmodel(uid = uid) :: left)
       case AddValue(uid) => copy(right = right.updated(uid, RightSubmodel(uid = uid)))
     }
@@ -99,8 +99,8 @@ object ConceptApp extends App {
 
         right.foreach {
           case KeyUpdate(key, component) =>
-            rightComponenets.update(key, component)
             component.render.update(component.initialState).run()
+            rightComponenets.update(key, component)
           case KeyRemove(key) =>
             rightComponenets.remove(key)
         }
@@ -128,7 +128,7 @@ object ConceptApp extends App {
     render.distinctUntilChanged.subscribe(subscriber)
   }
 
-  val s = Subject[Action]
+  val s = Subject[Event]
   val initialModel = MainModel()
   val render = SideEffectChain[MainModel]()
 
@@ -137,7 +137,7 @@ object ConceptApp extends App {
     model.step(action)(new Context {
       override def getService[B : Manifest]: B = ???
 
-      override def onAction(action: Action): Unit = s.onNext(action)
+      override def onAction(action: Event): Unit = s.onNext(action)
     })
   }.subscribe({ model =>
     render.update(model).run()

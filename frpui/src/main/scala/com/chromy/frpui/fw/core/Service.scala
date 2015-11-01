@@ -1,4 +1,4 @@
-package com.chromy.frpui.core
+package com.chromy.frpui.fw.core
 
 /**
  * Created by cry on 2015.10.29..
@@ -25,7 +25,7 @@ trait ServiceBuilder[A <: BaseService] {
 
 object ServiceBuilder {
 
-  case class ServiceAdded[B <: BaseService](serviceName: String, service: B) extends Action
+  case class ServiceAdded[B <: BaseService](serviceName: String, service: B) extends Event
 
   def singleton[A <: BaseService : Manifest](iInitialValue: A)(implicit ev: Manifest[A#I]): ServiceBuilder[A] = new ServiceBuilder[A] {
     val m = manifest[A#I]
