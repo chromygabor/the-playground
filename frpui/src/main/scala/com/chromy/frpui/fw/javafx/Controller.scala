@@ -20,9 +20,7 @@ trait BaseController {
   }
 
   protected def fire(action: BehaviorAction[C])(implicit model: C) = {
-    def newF(context: Context, model: C): C = action(BehaviorContext[C](context, model), model)
-    val delayedEvent = DelayedEvent[C](model.uid, newF)
-    channel(delayedEvent)
+    channel(action.asEvent(model.uid))
   }
 
   protected def channel: Event => Unit = {
