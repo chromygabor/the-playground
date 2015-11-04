@@ -3,7 +3,7 @@ package com.chromy.frpui.fw.javafx
 import javafx.fxml.FXMLLoader
 import javafx.scene.Parent
 
-import com.chromy.frpui.fw.core.{Event, SideEffectChain}
+import com.chromy.frpui.fw.core.{SideEffect, Event, SideEffectChain}
 
 import scala.util.Try
 
@@ -11,7 +11,7 @@ import scala.util.Try
  * Created by cry on 2015.11.01..
  */
 object JavaFX {
-  def apply[M <: BaseController : Manifest](channel: Event => Unit, render: SideEffectChain[M#C], initialState: M#C): Try[(Parent, M)] = {
+  def apply[M <: BaseController : Manifest](channel: Event => Unit, render: SideEffectChain[M#C], initialState: M#C): Try[(Parent, M, SideEffect)] = {
     val ct = manifest[M]
 
     Try {
@@ -24,10 +24,10 @@ object JavaFX {
 
       val sideEffect = controller.init(channel, render.asInstanceOf[SideEffectChain[controller.C]], initialState.asInstanceOf[controller.C])
 
-      sideEffect.run()
+      
       //      sideEffect.errors.foreach(_.printStackTrace())
 
-      (node, controller)
+      (node, controller, sideEffect)
     }
 
   }
