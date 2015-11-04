@@ -12,20 +12,23 @@ import rx.lang.scala.{Scheduler => ScalaScheduler}
 import scala.util.{Failure, Success}
 
 
-object CountersApp extends App {
 
+
+object CountersApp extends App {
   new JFXPanel()
 
-  val app = new FrpApp[Counters](state = Counters(), sideEffectScheduler = JavaFXScheduler())
-
+  val initialState = Counters()
+  val app = new FrpApp[Counters](state = initialState, sideEffectScheduler = JavaFXScheduler())
+  
   Platform.runLater(new Runnable() {
     override def run(): Unit = {
       JavaFX[CountersController](app.onNext, app.render, app.initialState) match {
-        case Success((parent, _)) =>
+        case Success((parent, _, effect)) =>  //We don't need to hold reference to controller, because the parent holds it
           val stage = new Stage
           stage.setScene(new Scene(parent))
           stage.setTitle("CounterPair App")
           stage.show()
+          effect.run()
         case Failure(e) =>
           e.printStackTrace()
       }
