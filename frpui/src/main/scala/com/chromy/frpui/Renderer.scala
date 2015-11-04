@@ -5,16 +5,17 @@ import com.chromy.frpui.fw.core.SideEffect
 /**
  * Created by cry on 2015.11.01..
  */
-trait Renderer[A] {
-  def subscriber: A => SideEffect
+trait Renderer[A] extends ((A) => SideEffect) {
 
   def ++(renderer: Renderer[A]): Renderer[A] = {
-    val parent = this
+    val parentThis = this
     new Renderer[A] {
-      override def subscriber: (A) => SideEffect = { model =>
+      private val parent = parentThis
+
+      override def apply(model: A): SideEffect = {
         SideEffect {
-          parent.subscriber(model).run()
-          renderer.subscriber(model).run()
+          parent(model).run()
+          renderer(model).run()
         }
       }
     }
