@@ -7,7 +7,8 @@ import scala.collection.mutable.{Map => MMap, WeakHashMap => WMap}
 
 trait SideEffectChain[T] {
   private[this] val _subscribersLock: Object = new Object()
-  private[this] val _subscribers: MMap[(T => SideEffect), Int] = WMap()
+  private[this] val _subscribers: WMap[(T => SideEffect), Int] = WMap()
+  protected val _lastItem: AtomicReference[Option[T]] = new AtomicReference(None)
 
   private[SideEffectChain] def subscribers: List[(T => SideEffect)] = {
     var newSubscribers: List[T => SideEffect] = null
@@ -19,12 +20,17 @@ trait SideEffectChain[T] {
     newSubscribers
   }
 
+  def lastItem: Option[T] = _lastItem.get
+
   def filter(pred: T => Boolean): SideEffectChain[T] = {
     val myParent = this
     new SideEffectChain[T] {
       private val parent = myParent
+      override protected val _lastItem = new AtomicReference[Option[T]](parent._lastItem.get.filter(pred))
+
       override val update: T => SideEffect = { in =>
         if (pred(in)) {
+          _lastItem.set(Some(in))
           subscribers.foldLeft(SideEffect()) { case (executables, subscriber) =>
             val s = { () => subscriber(in) }
             executables.append(s)
@@ -38,11 +44,11 @@ trait SideEffectChain[T] {
   def distinctUntilChanged: SideEffectChain[T] = {
     val myParent = this
     new SideEffectChain[T] {
-      private val lastItem = new AtomicReference[T]()
       private val parent = myParent
+      override protected val _lastItem = new AtomicReference[Option[T]](parent._lastItem.get())
 
       override val update: T => SideEffect = { in =>
-        if (lastItem.getAndSet(in) != in) {
+        if (_lastItem.getAndSet(Some(in)) != in) {
           subscribers.foldLeft(SideEffect()) { case (executables, subscriber) =>
             val s = { () => subscriber(in) }
             executables.append(s)
@@ -51,19 +57,13 @@ trait SideEffectChain[T] {
       }
       parent.subscribe(update)
     }
-
   }
 
   def map[B](f: T => B): SideEffectChain[B] = {
     val myParent = this
     new SideEffectChain[B] {
       private val parent = myParent
-      override val update: B => SideEffect = { in =>
-        subscribers.foldLeft(SideEffect()) { case (executables, subscriber) =>
-          val s = { () => subscriber(in) }
-          executables.append(s)
-        }
-      }
+      override protected val _lastItem = new AtomicReference[Option[B]](parent._lastItem.get.map(f))
 
       private val updater: T => SideEffect = { in =>
         update(f(in))
@@ -77,13 +77,12 @@ trait SideEffectChain[T] {
 
     new SideEffectChain[B] {
       private val parent = myParent
-      override val update: B => SideEffect = { in =>
-        subscribers.foldLeft(SideEffect()) { case (executables, subscriber) =>
-          val s = { () => subscriber(in) }
-          executables.append(s)
-        }
+      
+      override protected val _lastItem = {
+        val parentSeq = parent._lastItem.get.asInstanceOf[Option[Seq[B]]]
+        new AtomicReference(parentSeq.flatMap(_.lift(index)))
       }
-
+     
       private val updater: T => SideEffect = { in =>
         val l = in.asInstanceOf[Seq[B]]
         if (l.isDefinedAt(index)) {
@@ -98,14 +97,13 @@ trait SideEffectChain[T] {
 
   def keyOption[K, V](key: K)(implicit ev: T <:< Map[K, V]): SideEffectChain[V] = {
     val myParent = this
-
+    
     new SideEffectChain[V] {
       private val parent = myParent
-      override val update: V => SideEffect = { in =>
-        subscribers.foldLeft(SideEffect()) { case (executables, subscriber) =>
-          val s = { () => subscriber(in) }
-          executables.append(s)
-        }
+      
+      override protected val _lastItem = {
+        val parentMap = parent._lastItem.get.asInstanceOf[Option[Map[K, V]]]
+        new AtomicReference(parentMap.flatMap(in => in.get(key)))
       }
 
       private val updater: T => SideEffect = { in =>
@@ -120,7 +118,13 @@ trait SideEffectChain[T] {
     }
   }
 
-  val update: T => SideEffect
+  val update: T => SideEffect = { in =>
+    _lastItem.set(Some(in))
+    subscribers.foldLeft(SideEffect()) { case (executables, subscriber) =>
+      val s = { () => subscriber(in) }
+      executables.append(s)
+    }
+  }
 
   def subscribe(subscriber: (T) => SideEffect): Unit = {
     _subscribersLock.synchronized {
@@ -131,12 +135,5 @@ trait SideEffectChain[T] {
 }
 
 object SideEffectChain {
-  def apply[T](): SideEffectChain[T] = new SideEffectChain[T] {
-    override val update: T => SideEffect = { in =>
-      subscribers.foldLeft(SideEffect()) { case (executables, subscriber) =>
-        val s = { () => subscriber(in) }
-        executables.append(s)
-      }
-    }
-  }
+  def apply[T](): SideEffectChain[T] = new SideEffectChain[T] { }
 }
