@@ -11,7 +11,7 @@ import com.chromy.frpui.fw.core._
 trait BaseController {
   type C <: BaseModel
 
-  private[this] var _initialState = new AtomicReference[(C, Event => Unit, SideEffectChain[C])]()
+  private[this] val _initialState = new AtomicReference[(C, Event => Unit, SideEffectChain[C])]()
 
   protected def initialState: C = {
     val r = _initialState.get
@@ -35,43 +35,51 @@ trait BaseController {
     r._3
   }
 
-  protected def renderer: Renderer[C]
+  protected val renderer: Renderer[C]
 
   def init(channel: Event => Unit, render: SideEffectChain[C], initialState: C): SideEffect = {
-    _initialState.set((initialState, channel, render))
-    render.distinctUntilChanged.subscribe(renderer.subscriber)
-    render.update(initialState)
+    val distinctRender = render.distinctUntilChanged  
+    _initialState.set((initialState, channel, distinctRender))
+    distinctRender.subscribe(renderer)
+
+    render.update(render.lastItem.getOrElse(initialState))
   }
 
   protected object Renderer {
     def apply(): Renderer[C] = new Renderer[C] {
-      override val subscriber: (C) => SideEffect = { _ => SideEffect() }
+      //override val subscriber: (C) => SideEffect = { _ => SideEffect() }
+      override def apply(model: C): SideEffect = SideEffect()
     }
 
     def apply(f: C => SideEffect): Renderer[C] = new Renderer[C] {
-      override val subscriber: (C) => SideEffect = { model => f(model) }
+      //      override val subscriber: (C) => SideEffect = { model => f(model) }
+      override def apply(model: C): SideEffect = f(model)
+      override def toString(): String = "Renderer"
     }
 
     def apply(f: (C, C) => SideEffect): Renderer[C] = new Renderer[C] {
-      override val subscriber: (C) => SideEffect = {
-        val prevValue = new AtomicReference[C](initialState)
-        val res: C => SideEffect = { in =>
-          val res = if(in != prevValue.get) {
-            val oldValue = prevValue.get
-            prevValue.set(in)
-            f(oldValue, in)
-          } else {
-            SideEffect()
-          }
-          res
+      val prevValue = new AtomicReference[C](initialState)
+
+      override def apply(in: C): SideEffect = {
+        if (in != prevValue.get) {
+          val oldValue = prevValue.get
+          prevValue.set(in)
+          f(oldValue, in)
+        } else {
+          SideEffect()
         }
-        res
       }
+      override def toString(): String = "Renderer"
     }
   }
 
 }
 
+/**
+ * Do not do any javafx related stuffs in the constructor, you can't add anything at initialization time, because it shouldn't
+ * matter which time you run that sg.
+ * @tparam COMP
+ */
 trait Controller[COMP <: BaseModel] extends BaseController {
   type C = COMP
 }
