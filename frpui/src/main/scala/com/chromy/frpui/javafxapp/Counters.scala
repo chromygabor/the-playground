@@ -15,7 +15,7 @@ import scala.util.{Failure, Success}
 /**
  * Created by cry on 2015.10.30..
  */
-case class Counters(val uid: Uid = Uid(), counters: List[Counter] = Nil) extends Model[Counters] 
+case class Counters(val uid: Uid = Uid(), counters: List[Counter] = Nil) extends Model[Counters]
 
 object Counters extends Behavior[Counters] {
   private def resultReceived = Action { (contex, model) =>
@@ -47,13 +47,13 @@ class CountersController extends Controller[Counters] {
   //  @FXML private var _counterNavigatorController: CounterNavigatorController = _
   //  lazy val counterNavigator = _counterNavigatorController
 
-  override lazy val renderer = Renderer { implicit model =>
-    SideEffect {
-      println(s"SideEffect (C) get run")
-      bAdd.setOnAction(() => fire(Counters.addClicked))
-    }
-  } ++
-    Renderer { (prevModel, model) =>
+  override lazy val renderer =
+    Renderer { implicit model =>
+      SideEffect {
+        println(s"SideEffect (C) get run")
+        bAdd.setOnAction(() => fire(Counters.addClicked))
+      }
+    } ++ Renderer { (prevModel, model) =>
       println(s"Subscriber get called: $prevModel -> $model")
       val counters = prevModel.counters.diffOps(model.counters)(_.uid).map {
         case Insert(pos, item) =>
@@ -63,12 +63,61 @@ class CountersController extends Controller[Counters] {
         case Move(from, to) => Move(from, to)
       }
 
+      counters.foldLeft(SideEffect()) { (accu, counter) =>
+        counter match {
+          case Insert(pos, component) => component match {
+            case Success((parent, _, effect)) =>
+              accu.append(() => effect).append { () => SideEffect(pCounters.getChildren.add(parent)) }
+            case Failure(error) =>
+              accu.append { () =>
+                SideEffect {
+                  println("Couldn't add counter")
+                  error.printStackTrace()
+                }
+              }
+          }
+
+          case Remove(pos) =>
+            accu.append { () =>
+              SideEffect {
+                pCounters.getChildren.remove(pos)
+              }
+            }
+          case Move(from, to) =>
+            accu.append { () =>
+              SideEffect {
+                val component = pCounters.getChildren.get(from)
+                pCounters.getChildren.remove(from)
+                pCounters.getChildren.add(to, component)
+              }
+            }
+        }
+      }
+
+      //      counters.foldLeft(SideEffect()) {
+      //        case Insert(pos, component) => component match {
+      //          case Success((parent, _, effect)) =>
+      //            
+      //            pCounters.getChildren.add(parent)
+      //          case Failure(error) =>
+      //            println("Couldn't add counter")
+      //            error.printStackTrace()
+      //        }
+      //
+      //        case Remove(pos) =>
+      //          pCounters.getChildren.remove(pos)
+      //        case Move(from, to) =>
+      //          val component = pCounters.getChildren.get(from)
+      //          pCounters.getChildren.remove(from)
+      //          pCounters.getChildren.add(to, component)
+      //      }
+
       SideEffect {
         println(s"SideEffect (C,C) get run")
 
         counters.foreach {
           case Insert(pos, component) => component match {
-            case Success((parent, _)) =>
+            case Success((parent, _, effect)) =>
               pCounters.getChildren.add(parent)
             case Failure(error) =>
               println("Couldn't add counter")
