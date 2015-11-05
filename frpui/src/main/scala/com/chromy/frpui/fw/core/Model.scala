@@ -8,7 +8,7 @@ import monocle._
 
 case object Init extends Event
 case class Targeted(target: Uid, action: Event) extends Event
-case class DelayedEvent[M](uid: Uid, f: (Context, M) => M) extends Event
+case class Action[M](uid: Uid, f: (Context, M) => M) extends Event
 
 trait Initializable
 
@@ -62,8 +62,8 @@ case class Child[M, B](lens: Lens[M, B]) {
 object BaseModel {
   def step[A <: BaseModel](action: Event, model: A, children: List[Child[A, _]], handle: EventHandler[A])(implicit context: Context): A = {
     action match {
-      case d: DelayedEvent[_] if d.uid == model.uid =>
-        val defer = d.asInstanceOf[DelayedEvent[A]]
+      case d: Action[_] if d.uid == model.uid =>
+        val defer = d.asInstanceOf[Action[A]]
         defer.f(context, model)
       case _ =>
         val handler = handle.handle
@@ -85,7 +85,7 @@ trait BaseModel {
 
   protected def children: List[Child[M, _]] = Nil
 
-  def step(action: Event)(implicit context: Context): M = BaseModel.step[M](action, this.asInstanceOf[M], children, handle(context))
+  final def step(action: Event)(implicit context: Context): M = BaseModel.step[M](action, this.asInstanceOf[M], children, handle(context))
 
   protected def handle(implicit context: Context): EventHandler[M] = EventHandler()
 

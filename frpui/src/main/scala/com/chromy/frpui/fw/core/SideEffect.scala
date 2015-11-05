@@ -27,9 +27,18 @@ trait SideEffect {
 
   def errors: List[Throwable]
 
-  def append(subscriber: () => SideEffect): SideEffect = {
+  def +(subscriber : => Unit): SideEffect = {
     Try {
-      subscriber()
+      SideEffect(subscriber)
+    } match {
+      case Success(executable) => SideEffect({ run(); executable.run()}, errors)
+      case Failure(t) => SideEffect(run(), t :: errors)
+    }
+  }
+
+  def ++(subscriber : => SideEffect): SideEffect = {
+    Try {
+      subscriber
     } match {
       case Success(executable) => SideEffect({ run(); executable.run()}, errors)
       case Failure(t) => SideEffect(run(), t :: errors)

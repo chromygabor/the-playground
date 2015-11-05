@@ -8,6 +8,7 @@ import com.chromy.frpui.fw.core._
 import com.chromy.frpui.fw.javafx.Utils._
 import com.chromy.frpui.fw.javafx.{Controller, JavaFX, Utils}
 import com.chromy.frpui.fw.util.DiffUtils._
+import monocle.macros.GenLens
 
 import scala.concurrent.Future
 import scala.util.{Failure, Success}
@@ -15,7 +16,13 @@ import scala.util.{Failure, Success}
 /**
  * Created by cry on 2015.10.30..
  */
-case class Counters(val uid: Uid = Uid(), counters: List[Counter] = Nil) extends Model[Counters]
+case class Counters(val uid: Uid = Uid(), counters: List[Counter] = Nil) extends Model[Counters] {
+  override val children = List(Child(GenLens[Counters](_.counters)))
+
+  override protected def handle(implicit context: Context): EventHandler[Counters] = EventHandler{
+    case Close(uid) => copy(counters = counters.filter( _.uid != uid ))
+  }
+}
 
 object Counters extends Behavior[Counters] {
   private def resultReceived = Action { (contex, model) =>
@@ -28,7 +35,7 @@ object Counters extends Behavior[Counters] {
 
     Future {
       println("Sleeping for 1 sec")
-      Thread.sleep(2000)
+      Thread.sleep(100)
       println("Sleeping is over")
       context.fire(resultReceived)
     }
@@ -67,71 +74,50 @@ class CountersController extends Controller[Counters] {
         counter match {
           case Insert(pos, component) => component match {
             case Success((parent, _, effect)) =>
-              accu.append(() => effect).append { () => SideEffect(pCounters.getChildren.add(parent)) }
+              accu ++ effect + {  
+                pCounters.getChildren.add(parent)
+                println(pCounters.getChildren)
+              }
             case Failure(error) =>
-              accu.append { () =>
-                SideEffect {
+              accu + { 
                   println("Couldn't add counter")
                   error.printStackTrace()
-                }
               }
           }
 
           case Remove(pos) =>
-            accu.append { () =>
-              SideEffect {
+            accu + { 
                 pCounters.getChildren.remove(pos)
-              }
             }
           case Move(from, to) =>
-            accu.append { () =>
-              SideEffect {
+            accu + {
                 val component = pCounters.getChildren.get(from)
                 pCounters.getChildren.remove(from)
                 pCounters.getChildren.add(to, component)
-              }
             }
         }
       }
 
-      //      counters.foldLeft(SideEffect()) {
-      //        case Insert(pos, component) => component match {
-      //          case Success((parent, _, effect)) =>
-      //            
-      //            pCounters.getChildren.add(parent)
-      //          case Failure(error) =>
-      //            println("Couldn't add counter")
-      //            error.printStackTrace()
-      //        }
-      //
-      //        case Remove(pos) =>
-      //          pCounters.getChildren.remove(pos)
-      //        case Move(from, to) =>
-      //          val component = pCounters.getChildren.get(from)
-      //          pCounters.getChildren.remove(from)
-      //          pCounters.getChildren.add(to, component)
-      //      }
-
-      SideEffect {
-        println(s"SideEffect (C,C) get run")
-
-        counters.foreach {
-          case Insert(pos, component) => component match {
-            case Success((parent, _, effect)) =>
-              pCounters.getChildren.add(parent)
-            case Failure(error) =>
-              println("Couldn't add counter")
-              error.printStackTrace()
-          }
-
-          case Remove(pos) =>
-            pCounters.getChildren.remove(pos)
-          case Move(from, to) =>
-            val component = pCounters.getChildren.get(from)
-            pCounters.getChildren.remove(from)
-            pCounters.getChildren.add(to, component)
-        }
-      }
+//      SideEffect {
+//        println(s"SideEffect (C,C) get run")
+//
+//        counters.foreach {
+//          case Insert(pos, component) => component match {
+//            case Success((parent, _, effect)) =>
+//              pCounters.getChildren.add(parent)
+//            case Failure(error) =>
+//              println("Couldn't add counter")
+//              error.printStackTrace()
+//          }
+//
+//          case Remove(pos) =>
+//            pCounters.getChildren.remove(pos)
+//          case Move(from, to) =>
+//            val component = pCounters.getChildren.get(from)
+//            pCounters.getChildren.remove(from)
+//            pCounters.getChildren.add(to, component)
+//        }
+//      }
     }
 
 }

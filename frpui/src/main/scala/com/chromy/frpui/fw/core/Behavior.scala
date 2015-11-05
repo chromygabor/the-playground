@@ -5,17 +5,22 @@ package com.chromy.frpui.fw.core
  */
 
 class BehaviorAction[A <: BaseModel](apply: (BehaviorContext, A) => A) {
-  def asEvent(uid: Uid): DelayedEvent[A] = DelayedEvent(uid, { (context, model) => apply(BehaviorContext(context, uid), model) })
+  def asEvent(uid: Uid): Action[A] = Action(uid, { (context, model) => apply(BehaviorContext(context, uid), model) })
 }
 
 trait BehaviorContext extends Context {
   def fire[A <: BaseModel](behaviorAction: BehaviorAction[A]): Unit
+  def fire(event: Event): Unit
 }
 
 object BehaviorContext {
   def apply(context: Context, uid: Uid): BehaviorContext = new BehaviorContext {
     override def fire[A <: BaseModel](behaviorAction: BehaviorAction[A]): Unit = {
       context.onAction(behaviorAction.asEvent(uid))
+    }
+
+    override def fire(event: Event): Unit = {
+      context.onAction(event)
     }
 
     override def getService[B: Manifest]: B = context.getService[B]

@@ -20,8 +20,11 @@ case class ExistingCounter(value: Int, uid: Uid = Uid()) extends Counter
 
 case class NotExistingCounter(value: Int, uid: Uid = Uid()) extends Counter
 
+case class Close(uid: Uid) extends Event
+
 object Counter extends Behavior[Counter] {
   def increment = Action { (_, model) =>
+    println(s"Increment: $model")
     model match {
       case model: ExistingCounter => model.copy(model.value + 1)
       case _ => model
@@ -29,6 +32,7 @@ object Counter extends Behavior[Counter] {
   }
 
   def decrement = Action { (_, model) =>
+    println(s"Decrement: $model")
     model match {
       case model: ExistingCounter => model.copy(model.value - 1)
       case _ => model
@@ -53,16 +57,15 @@ class CounterController extends Controller[Counter] {
   lazy val btnDecrement = _btnDecrement
   lazy val btnClose = _btnClose
 
-  override lazy val renderer: Renderer[Counter] = Renderer()
-    Renderer { implicit model =>
+  override lazy val renderer: Renderer[Counter] = Renderer { implicit model =>
       SideEffect {
-        lblCounter.setText(model.value.toString)
+        lblCounter.setText(s"${model.uid} ${model.value.toString}")
 
         btnIncrement.setOnAction(() => fire(Counter.increment))
 
         btnDecrement.setOnAction(() => fire(Counter.decrement))
 
-        btnClose.setOnAction(() => fire(Counter.close))
+        btnClose.setOnAction(() => channel(Close(model.uid)))
       }
     }
   

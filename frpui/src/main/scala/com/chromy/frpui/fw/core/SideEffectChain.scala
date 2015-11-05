@@ -32,8 +32,7 @@ trait SideEffectChain[T] {
         if (pred(in)) {
           _lastItem.set(Some(in))
           subscribers.foldLeft(SideEffect()) { case (executables, subscriber) =>
-            val s = { () => subscriber(in) }
-            executables.append(s)
+            executables.++(subscriber(in))
           }
         } else SideEffect()
       }
@@ -50,8 +49,7 @@ trait SideEffectChain[T] {
       override val update: T => SideEffect = { in =>
         if (_lastItem.getAndSet(Some(in)) != in) {
           subscribers.foldLeft(SideEffect()) { case (executables, subscriber) =>
-            val s = { () => subscriber(in) }
-            executables.append(s)
+            executables.++(subscriber(in))
           }
         } else SideEffect {}
       }
@@ -121,8 +119,7 @@ trait SideEffectChain[T] {
   val update: T => SideEffect = { in =>
     _lastItem.set(Some(in))
     subscribers.foldLeft(SideEffect()) { case (executables, subscriber) =>
-      val s = { () => subscriber(in) }
-      executables.append(s)
+      executables.++(subscriber(in))
     }
   }
 

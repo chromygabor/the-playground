@@ -23,6 +23,10 @@ trait BaseController {
     channel(action.asEvent(model.uid))
   }
 
+  protected def fire(event: Event) = {
+    channel(event)
+  }
+
   protected def channel: Event => Unit = {
     val r = _initialState.get
     if (r == null) throw new IllegalAccessError("The initialState is accessible only after the init method was called")
