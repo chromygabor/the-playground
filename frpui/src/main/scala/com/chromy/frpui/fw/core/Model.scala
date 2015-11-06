@@ -7,9 +7,17 @@ import monocle._
  */
 
 case object Init extends Event
-trait PreUpdateEvent extends Event
+
 case class Targeted(target: Uid, action: Event) extends Event
-case class Action[M](uid: Uid, f: (Context, M) => M) extends Event
+
+trait UpdateAction[M] extends Event {
+  def uid: Uid
+  def apply(context: Context, model: M): M
+  
+}
+trait PreUpdateAction[M] extends UpdateAction[M]
+trait PostUpdateAction[M] extends UpdateAction[M]
+
 
 trait Initializable
 
@@ -63,14 +71,14 @@ case class Child[M, B](lens: Lens[M, B]) {
 object BaseModel {
   def step[A <: BaseModel](action: Event, model: A, children: List[Child[A, _]], handle: EventHandler[A])(implicit context: Context): A = {
     action match {
-      case d: Action[_] if d.uid == model.uid =>
-        val defer = d.asInstanceOf[Action[A]]
-        defer.f(context, model)
+      case d: UpdateAction[_] if d.uid == model.uid =>
+        val defer = d.asInstanceOf[UpdateAction[A]]
+        defer(context, model)
       case _ =>
         val previousModel = model
 
         val newModel = action match {
-          case e: PreUpdateEvent =>
+          case e: PreUpdateAction[_] =>
             val steppedModel = children.foldLeft(model) { (model, child) =>
               child.step(action, previousModel, model)
             }
