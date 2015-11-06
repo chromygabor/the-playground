@@ -21,15 +21,14 @@ case class Counters(val uid: Uid = Uid(), counters: List[Counter] = Nil) extends
 
   override def handle(implicit context: Context): EventHandler[Counters] = EventHandler{
     case Init => 
-      val service = context.getService[CounterService]
-      
       this
-    case Close(uid) => copy(counters = counters.filter( _.uid != uid ))
+    case _ =>
+      copy(counters = counters.collect{case e: ActiveCounter => e})
   }
 }
 
 object Counters extends Behavior[Counters] {
-  private def resultReceived = Action { (contex, model) =>
+  private def resultReceived = Action { (context, model) =>
     println(s"ResultReceived: $model")
     model.copy(counters = Counter() :: model.counters)
   }
