@@ -5,6 +5,7 @@ import javafx.embed.swing.JFXPanel
 import javafx.scene.Scene
 import javafx.stage.Stage
 
+import com.chromy.frpui.ConfigServiceImpl
 import com.chromy.frpui.fw.core._
 import com.chromy.frpui.fw.javafx.{JavaFX, JavaFXScheduler}
 import rx.lang.scala.{Scheduler => ScalaScheduler}
@@ -17,8 +18,12 @@ import scala.util.{Failure, Success}
 object CountersApp extends App {
   new JFXPanel()
 
+  lazy val services = Map[Class[_], ServiceBuilder[_]](
+    classOf[CounterService] -> ServiceBuilder.singleton(CounterServiceImpl())
+  )
+
   val initialState = Counters()
-  val app = new FrpApp[Counters](state = initialState, sideEffectScheduler = JavaFXScheduler())
+  val app = new FrpApp[Counters](services = services, state = initialState, sideEffectScheduler = JavaFXScheduler())
 
   Platform.runLater(new Runnable() {
     override def run(): Unit = {

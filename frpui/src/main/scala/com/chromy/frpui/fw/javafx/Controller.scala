@@ -18,13 +18,12 @@ trait BaseController {
     if (r == null) throw new IllegalAccessError("The initialState is accessible only after the init method was called")
     r._1
   }
-
-  protected def fire(action: BehaviorAction[C])(implicit model: C) = {
-    channel(action.asEvent(model.uid))
-  }
-
-  protected def fire(event: Event) = {
-    channel(event)
+  protected def onAction(action: Event)(implicit model: C) = {
+    action match {
+      case e: BehaviorAction[_] => channel(e.asEvent(model.uid))
+      case e => channel(e)
+    }
+    
   }
 
   protected def channel: Event => Unit = {

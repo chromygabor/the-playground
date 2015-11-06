@@ -61,11 +61,11 @@ class CounterController extends Controller[Counter] {
       SideEffect {
         lblCounter.setText(s"${model.uid} ${model.value.toString}")
 
-        btnIncrement.setOnAction(() => fire(Counter.increment))
+        btnIncrement.setOnAction(() => onAction(Counter.increment))
 
-        btnDecrement.setOnAction(() => fire(Counter.decrement))
+        btnDecrement.setOnAction(() => onAction(Counter.decrement))
 
-        btnClose.setOnAction(() => channel(Close(model.uid)))
+        btnClose.setOnAction(() => onAction(Close(model.uid)))
       }
     }
   

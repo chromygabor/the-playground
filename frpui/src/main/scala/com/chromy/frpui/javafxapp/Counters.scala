@@ -20,6 +20,10 @@ case class Counters(val uid: Uid = Uid(), counters: List[Counter] = Nil) extends
   override val children = List(Child(GenLens[Counters](_.counters)))
 
   override protected def handle(implicit context: Context): EventHandler[Counters] = EventHandler{
+    case Init => 
+      val service = context.getService[CounterService]
+      
+      this
     case Close(uid) => copy(counters = counters.filter( _.uid != uid ))
   }
 }
@@ -37,7 +41,7 @@ object Counters extends Behavior[Counters] {
       println("Sleeping for 1 sec")
       Thread.sleep(100)
       println("Sleeping is over")
-      context.fire(resultReceived)
+      context.onAction(resultReceived)
     }
     model
   }
@@ -54,17 +58,24 @@ class CountersController extends Controller[Counters] {
   //  @FXML private var _counterNavigatorController: CounterNavigatorController = _
   //  lazy val counterNavigator = _counterNavigatorController
 
+  private lazy val subrenderer = render.map { model =>
+    model.counters.map { item =>
+      item.uid -> item
+    }.toMap
+  }
+  
   override lazy val renderer =
     Renderer { implicit model =>
       SideEffect {
-        println(s"SideEffect (C) get run")
-        bAdd.setOnAction(() => fire(Counters.addClicked))
+        //println(s"SideEffect (C) get run")
+        bAdd.setOnAction(() => onAction(Counters.addClicked))
       }
     } ++ Renderer { (prevModel, model) =>
-      println(s"Subscriber get called: $prevModel -> $model")
-      val counters = prevModel.counters.diffOps(model.counters)(_.uid).map {
+      //println(s"Subscriber get called: $prevModel -> $model")
+      val lcounters = prevModel.counters.diffOps(model.counters)(_.uid)
+      val counters = lcounters.map {
         case Insert(pos, item) =>
-          val component = JavaFX[CounterController](channel, render.map(_.counters).indexOption(pos), item)
+          val component = JavaFX[CounterController](channel, subrenderer.keyOption(item.uid), item)
           Insert(pos, component)
         case Remove(pos) => Remove(pos)
         case Move(from, to) => Move(from, to)
@@ -75,8 +86,7 @@ class CountersController extends Controller[Counters] {
           case Insert(pos, component) => component match {
             case Success((parent, _, effect)) =>
               accu ++ effect + {  
-                pCounters.getChildren.add(parent)
-                println(pCounters.getChildren)
+                pCounters.getChildren.add(pos,parent)
               }
             case Failure(error) =>
               accu + { 
@@ -87,7 +97,7 @@ class CountersController extends Controller[Counters] {
 
           case Remove(pos) =>
             accu + { 
-                pCounters.getChildren.remove(pos)
+              pCounters.getChildren.remove(pos)
             }
           case Move(from, to) =>
             accu + {
@@ -97,27 +107,5 @@ class CountersController extends Controller[Counters] {
             }
         }
       }
-
-//      SideEffect {
-//        println(s"SideEffect (C,C) get run")
-//
-//        counters.foreach {
-//          case Insert(pos, component) => component match {
-//            case Success((parent, _, effect)) =>
-//              pCounters.getChildren.add(parent)
-//            case Failure(error) =>
-//              println("Couldn't add counter")
-//              error.printStackTrace()
-//          }
-//
-//          case Remove(pos) =>
-//            pCounters.getChildren.remove(pos)
-//          case Move(from, to) =>
-//            val component = pCounters.getChildren.get(from)
-//            pCounters.getChildren.remove(from)
-//            pCounters.getChildren.add(to, component)
-//        }
-//      }
     }
-
 }
