@@ -20,7 +20,7 @@ trait BaseController {
   }
   protected def onAction(action: Event)(implicit model: C) = {
     action match {
-      case e: BehaviorAction[_] => channel(e.asEvent(model.uid))
+      case e: BehaviorAction[_] => channel(e(model.uid))
       case e => channel(e)
     }
     
