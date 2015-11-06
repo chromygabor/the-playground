@@ -16,17 +16,18 @@ trait Counter extends Model[Counter] {
   val value: Int
 }
 
-case class ExistingCounter(value: Int, uid: Uid = Uid()) extends Counter
+case class ActiveCounter(value: Int, uid: Uid = Uid()) extends Counter {
+  override def handle(implicit context: Context): EventHandler[Counter] = Counter.EventHandler()
+}
 
-case class NotExistingCounter(value: Int, uid: Uid = Uid()) extends Counter
-
-case class Close(uid: Uid) extends PreUpdateEvent
+case class DeletedCounter(value: Int, uid: Uid = Uid()) extends Counter
 
 object Counter extends Behavior[Counter] {
+  
   def increment = Action { (_, model) =>
     println(s"Increment: $model")
     model match {
-      case model: ExistingCounter => model.copy(model.value + 1)
+      case model: ActiveCounter => model.copy(model.value + 1)
       case _ => model
     }
   }
@@ -34,16 +35,17 @@ object Counter extends Behavior[Counter] {
   def decrement = Action { (_, model) =>
     println(s"Decrement: $model")
     model match {
-      case model: ExistingCounter => model.copy(model.value - 1)
+      case model: ActiveCounter => model.copy(model.value - 1)
       case _ => model
     }
   }
 
-  def close = Action { (_, model) =>
-    NotExistingCounter(0, model.uid)
+  def close = PreUpdateAction { (_, model) =>
+    println("Closing....")
+    DeletedCounter(0, model.uid)
   }
 
-  def apply() = ExistingCounter(0)
+  def apply() = ActiveCounter(0)
 }
 
 class CounterController extends Controller[Counter] {
@@ -65,7 +67,7 @@ class CounterController extends Controller[Counter] {
 
         btnDecrement.setOnAction(() => onAction(Counter.decrement))
 
-        btnClose.setOnAction(() => onAction(Close(model.uid)))
+        btnClose.setOnAction(() => onAction(Counter.close))
       }
     }
   
