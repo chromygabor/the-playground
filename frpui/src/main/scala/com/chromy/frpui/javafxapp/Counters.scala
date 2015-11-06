@@ -19,7 +19,7 @@ import scala.util.{Failure, Success}
 case class Counters(val uid: Uid = Uid(), counters: List[Counter] = Nil) extends Model[Counters] {
   override val children = List(Child(GenLens[Counters](_.counters)))
 
-  override protected def handle(implicit context: Context): EventHandler[Counters] = EventHandler{
+  override def handle(implicit context: Context): EventHandler[Counters] = EventHandler{
     case Init => 
       val service = context.getService[CounterService]
       

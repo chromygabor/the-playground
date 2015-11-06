@@ -20,7 +20,7 @@ case class ExistingCounter(value: Int, uid: Uid = Uid()) extends Counter
 
 case class NotExistingCounter(value: Int, uid: Uid = Uid()) extends Counter
 
-case class Close(uid: Uid) extends Event
+case class Close(uid: Uid) extends PreUpdateEvent
 
 object Counter extends Behavior[Counter] {
   def increment = Action { (_, model) =>

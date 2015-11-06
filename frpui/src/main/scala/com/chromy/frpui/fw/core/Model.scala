@@ -7,6 +7,7 @@ import monocle._
  */
 
 case object Init extends Event
+trait PreUpdateEvent extends Event
 case class Targeted(target: Uid, action: Event) extends Event
 case class Action[M](uid: Uid, f: (Context, M) => M) extends Event
 
@@ -66,12 +67,21 @@ object BaseModel {
         val defer = d.asInstanceOf[Action[A]]
         defer.f(context, model)
       case _ =>
-        val handler = handle.handle
         val previousModel = model
 
-        val initialModel: A = if (handler.isDefinedAt(action)) handler.apply(action) else model.asInstanceOf[A]
-        val newModel = children.foldLeft(initialModel) { (model, child) =>
-          child.step(action, previousModel, model)
+        val newModel = action match {
+          case e: PreUpdateEvent =>
+            val steppedModel = children.foldLeft(model) { (model, child) =>
+              child.step(action, previousModel, model)
+            }
+            val handler = steppedModel.handle.handle
+            if (handler.isDefinedAt(e)) handler.apply(e) else steppedModel.asInstanceOf[A]
+          case _ =>
+            val handler = handle.handle
+            val initialModel: A = if (handler.isDefinedAt(action)) handler.apply(action) else model.asInstanceOf[A]
+            children.foldLeft(initialModel) { (model, child) =>
+              child.step(action, previousModel, model)
+            }
         }
         newModel.asInstanceOf[A]
     }
@@ -87,7 +97,7 @@ trait BaseModel {
 
   final def step(action: Event)(implicit context: Context): M = BaseModel.step[M](action, this.asInstanceOf[M], children, handle(context))
 
-  protected def handle(implicit context: Context): EventHandler[M] = EventHandler()
+  protected[core] def handle(implicit context: Context): EventHandler[M] = EventHandler()
 
   //protected def action(f: (Context, M) => M): DelayedEvent[M] = DelayedEvent[M](uid, f)
 }
