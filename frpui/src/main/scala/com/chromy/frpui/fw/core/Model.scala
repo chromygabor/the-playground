@@ -15,8 +15,8 @@ trait UpdateAction[M] extends Event {
   def apply(context: Context, model: M): M
   
 }
-trait PreUpdateAction[M] extends UpdateAction[M]
-trait PostUpdateAction[M] extends UpdateAction[M]
+trait PostOrderAction 
+trait PreOrderAction 
 
 
 trait Initializable
@@ -70,23 +70,33 @@ case class Child[M, B](lens: Lens[M, B]) {
 
 object BaseModel {
   def step[A <: BaseModel](action: Event, model: A, children: List[Child[A, _]], handle: EventHandler[A])(implicit context: Context): A = {
+    println(s"Stepping $model for $action")
     action match {
-      case d: UpdateAction[_] if d.uid == model.uid =>
-        val defer = d.asInstanceOf[UpdateAction[A]]
-        defer(context, model)
       case _ =>
         val previousModel = model
 
         val newModel = action match {
-          case e: PreUpdateAction[_] =>
+          case e: PostOrderAction =>
             val steppedModel = children.foldLeft(model) { (model, child) =>
               child.step(action, previousModel, model)
             }
-            val handler = steppedModel.handle.handle
-            if (handler.isDefinedAt(e)) handler.apply(e) else steppedModel.asInstanceOf[A]
+            action match {
+              case d: UpdateAction[_] if d.uid == model.uid =>
+                val defer = d.asInstanceOf[UpdateAction[A]]
+                defer(context, model)
+              case _ =>
+                val handler = steppedModel.handle.handle
+                if (handler.isDefinedAt(e)) handler.apply(e) else steppedModel.asInstanceOf[A]
+            }
           case _ =>
-            val handler = handle.handle
-            val initialModel: A = if (handler.isDefinedAt(action)) handler.apply(action) else model.asInstanceOf[A]
+            val initialModel: A = action match {
+              case d: UpdateAction[_] if d.uid == model.uid =>
+                val defer = d.asInstanceOf[UpdateAction[A]]
+                defer(context, model)
+              case _ =>
+                val handler = handle.handle
+                if (handler.isDefinedAt(action)) handler.apply(action) else model.asInstanceOf[A]
+            }
             children.foldLeft(initialModel) { (model, child) =>
               child.step(action, previousModel, model)
             }

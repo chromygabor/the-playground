@@ -17,35 +17,66 @@ trait Counter extends Model[Counter] {
 }
 
 case class ActiveCounter(value: Int, uid: Uid = Uid()) extends Counter {
-  override def handle(implicit context: Context): EventHandler[Counter] = Counter.EventHandler()
+  override def handle(implicit context: Context): EventHandler[Counter] = Counter.eventHandler(this)
 }
 
 case class DeletedCounter(value: Int, uid: Uid = Uid()) extends Counter
 
 object Counter extends Behavior[Counter] {
-  
-  def increment = Action { (_, model) =>
+
+  override val handler = Handler {
+    case Init => init
+    case CountersChanged(stateAccessor) => countersChanged(stateAccessor)
+  }
+
+  def countersChanged(accessor: CounterStateAccessor) = Action { (context: Context, model) =>
+    accessor(model.uid).map { counterState =>
+      val state = counterState._2
+      
+      model match {
+        case m: ActiveCounter if m.value != state.value =>
+          println(s"Counter changed: ${model.uid}, ${state.value}")
+          m.copy(value = state.value)
+        case m => m
+      }
+    }.getOrElse(model)
+  }
+
+  val init = Action { (context: Context, model) =>
+    val service = context.getService[CounterService]
+    service.subscribe(model.uid)
+    println("Init")
+    model
+  }
+
+  val increment = Action { (context, model) =>
     println(s"Increment: $model")
+    val service = context.getService[CounterService]
     model match {
-      case model: ActiveCounter => model.copy(model.value + 1)
+      case model: ActiveCounter =>
+        service.increment(model.uid)
+        model
       case _ => model
     }
   }
 
-  def decrement = Action { (_, model) =>
+  val decrement = Action { (context, model) =>
     println(s"Decrement: $model")
+    val service = context.getService[CounterService]
     model match {
-      case model: ActiveCounter => model.copy(model.value - 1)
+      case model: ActiveCounter =>
+        service.increment(model.uid)
+        model
       case _ => model
     }
   }
 
-  def close = PreUpdateAction { (_, model) =>
+  val close = PostOrderAction { (_, model) =>
     println("Closing....")
     DeletedCounter(0, model.uid)
   }
 
-  def apply() = ActiveCounter(0)
+  def apply() = ActiveCounter(-1)
 }
 
 class CounterController extends Controller[Counter] {
