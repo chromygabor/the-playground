@@ -24,22 +24,18 @@ case class DeletedCounter(value: Int, uid: Uid = Uid()) extends Counter
 
 object Counter extends Behavior[Counter] {
 
-  override val handler = Handler {
+  override def handler(model: Counter) = Handler {
     case Init => init
-    case CountersChanged(stateAccessor) => countersChanged(stateAccessor)
+    case CountersChanged(stateAccessor) if stateAccessor(model.uid).isDefined  => countersChanged(stateAccessor(model.uid).get._2)
   }
 
-  def countersChanged(accessor: CounterStateAccessor) = Action { (context: Context, model) =>
-    accessor(model.uid).map { counterState =>
-      val state = counterState._2
-      
+  def countersChanged(state: CounterState) = Action { (context: Context, model) =>
       model match {
         case m: ActiveCounter if m.value != state.value =>
           println(s"Counter changed: ${model.uid}, ${state.value}")
           m.copy(value = state.value)
         case m => m
       }
-    }.getOrElse(model)
   }
 
   val init = Action { (context: Context, model) =>

@@ -51,13 +51,13 @@ trait Behavior[M <: BaseModel] {
 
   def eventHandler(model: M)(implicit context: Context): EventHandler[M] = new EventHandler[M] {
     override val handle: PartialFunction[Event, M] = {
-      case e if handler.isDefinedAt(e) =>
-        val updateAction = handler(e).apply(model.uid)
+      case e if handler(model).isDefinedAt(e) =>
+        val updateAction = handler(model)(e).apply(model.uid)
         updateAction.apply(BehaviorContext(context, model.uid), model)
     }
   }
   
-  def handler: PartialFunction[Event, BehaviorAction[M]] = new PartialFunction[Event, BehaviorAction[M]] {
+  def handler(model: M): PartialFunction[Event, BehaviorAction[M]] = new PartialFunction[Event, BehaviorAction[M]] {
     override def isDefinedAt(x: Event): Boolean = false
     override def apply(v1: Event): BehaviorAction[M] = ???
   }

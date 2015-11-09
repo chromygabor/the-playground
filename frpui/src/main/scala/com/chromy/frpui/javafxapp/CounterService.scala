@@ -13,6 +13,8 @@ trait CounterService {
   def increment(uid: Uid): Unit
 
   def decrement(uid: Uid): Unit
+  
+  def unsubscribe(uid: Uid): Unit
 }
 
 trait CounterState {
@@ -55,6 +57,11 @@ object CounterServiceImpl extends Behavior[CounterServiceImpl] {
     newModel
   }
 
+  def unsubscribe(uid: Uid) = Action { (context, model) =>
+    val newModel = model.copy(counters = model.counters - uid)
+    newModel
+  }
+
   def decrement(uid: Uid) = Action { (context, model) =>
     val newModel = model.copy(counters = model.counters.updated(uid, model.counters.getOrElse(uid, 0) - 1))
     modelChanged(context, newModel)
@@ -67,7 +74,7 @@ object CounterServiceImpl extends Behavior[CounterServiceImpl] {
     newModel
   }
 
-  private def modelChanged(context: BehaviorContext, newModel: CounterServiceImpl): Unit = {
+  private[this] def modelChanged(context: BehaviorContext, newModel: CounterServiceImpl): Unit = {
     context.onAction(CountersChanged(stateAccessor(newModel.counters)))
   }
 
@@ -125,5 +132,7 @@ case class CounterServiceImpl(uid: Uid = Uid(), counters: ListMap[Uid, Int] = Li
     override def decrement(sUid: Uid): Unit = context.onAction(CounterServiceImpl.decrement(sUid)(uid))
 
     override def increment(sUid: Uid): Unit = context.onAction(CounterServiceImpl.increment(sUid)(uid))
+
+    override def unsubscribe(sUid: Uid): Unit = context.onAction(CounterServiceImpl.unsubscribe(sUid)(uid))
   }
 } 
