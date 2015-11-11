@@ -11,59 +11,68 @@ import com.chromy.frpui.fw.core._
 trait BaseController {
   type C <: BaseModel
 
-  private[this] val _initialState = new AtomicReference[(C, Event => Unit, SideEffectChain[C])]()
+  private[this] val _initialState = new AtomicReference[(C, SideEffectChain[C])]()
+  private[this] val _context = new AtomicReference[Context]()
 
   protected def initialState: C = {
     val r = _initialState.get
     if (r == null) throw new IllegalAccessError("The initialState is accessible only after the init method was called")
     r._1
   }
+
   protected def onAction(action: Event)(implicit model: C) = {
     action match {
-      case e: BehaviorAction[_] => channel(e(model.uid))
-      case e => channel(e)
+      case e: BehaviorAction[_] => context.onAction(e(model.uid))
+      case e => context.onAction(e)
     }
-    
   }
 
-  protected def channel: Event => Unit = {
+  protected def context: Context = _context.get
+  
+//  protected def channel: Event => Unit = {
+//    val r = _initialState.get
+//    if (r == null) throw new IllegalAccessError("The initialState is accessible only after the init method was called")
+//    r._2
+//  }
+
+  protected def render: SideEffectChain[C] = {
     val r = _initialState.get
     if (r == null) throw new IllegalAccessError("The initialState is accessible only after the init method was called")
     r._2
   }
 
-  protected def render: SideEffectChain[C] = {
-    val r = _initialState.get
-    if (r == null) throw new IllegalAccessError("The initialState is accessible only after the init method was called")
-    r._3
-  }
-
   protected val renderer: Renderer[C]
 
-  def init(channel: Event => Unit, render: SideEffectChain[C], initialState: C): SideEffect = {
+  def init(context: Context, render: SideEffectChain[C], initialState: C): SideEffect = {
     val distinctRender = render.distinctUntilChanged  
-    _initialState.set((initialState, channel, distinctRender))
+    _initialState.set((initialState, distinctRender))
     distinctRender.subscribe(renderer)
 
-    render.update(render.lastItem.getOrElse(initialState))
+    render.update(render.lastItem.getOrElse(initialState), context)
   }
 
   protected object Renderer {
     def apply(): Renderer[C] = new Renderer[C] {
-      //override val subscriber: (C) => SideEffect = { _ => SideEffect() }
-      override def apply(model: C): SideEffect = SideEffect()
+      override def apply(model: C, context: Context): SideEffect = {
+        _context.set(context)
+        SideEffect()
+      }
     }
 
     def apply(f: C => SideEffect): Renderer[C] = new Renderer[C] {
-      //      override val subscriber: (C) => SideEffect = { model => f(model) }
-      override def apply(model: C): SideEffect = f(model)
+      override def apply(model: C, context: Context): SideEffect = {
+        _context.set(context)
+        f(model)
+      }
       override def toString(): String = "Renderer"
     }
 
     def apply(f: (C, C) => SideEffect): Renderer[C] = new Renderer[C] {
       val prevValue = new AtomicReference[C](initialState)
 
-      override def apply(in: C): SideEffect = {
+      override def apply(in: C, context: Context): SideEffect = {
+        _context.set(context)
+
         if (in != prevValue.get) {
           val oldValue = prevValue.get
           prevValue.set(in)

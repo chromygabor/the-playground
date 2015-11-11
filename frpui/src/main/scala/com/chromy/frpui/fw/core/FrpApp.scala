@@ -7,10 +7,20 @@ import rx.lang.scala.{Scheduler, Subject, Observer}
 /**
  * Created by cry on 2015.10.29..
  */
+
+object FrpApp {
+  def apply[M](state: M, 
+               services: Map[Class[_], ServiceBuilder[_]] = Map.empty, 
+               updateScheduler: Scheduler = ComputationScheduler(), 
+               renderScheduler: Scheduler = ComputationScheduler(), 
+               sideEffectScheduler: Scheduler): FrpApp[M] = new FrpApp[M](state, services, updateScheduler, renderScheduler, sideEffectScheduler) {
+  }
+}
+
 //oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
 //o App
 //oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
-class FrpApp[M](state: M, services: Map[Class[_], ServiceBuilder[_]] = Map.empty, updateScheduler: Scheduler = ComputationScheduler(), renderScheduler: Scheduler = ComputationScheduler(), sideEffectScheduler: Scheduler) {
+abstract class FrpApp[M](state: M, services: Map[Class[_], ServiceBuilder[_]] = Map.empty, updateScheduler: Scheduler = ComputationScheduler(), renderScheduler: Scheduler = ComputationScheduler(), sideEffectScheduler: Scheduler) {
 
   val onNext: Event => Unit = { action =>
     s.onNext(action)
@@ -62,7 +72,8 @@ class FrpApp[M](state: M, services: Map[Class[_], ServiceBuilder[_]] = Map.empty
     implicit val context = newContext(model, s)
     model.step(action)
   }.drop(1).observeOn(renderScheduler).map { model =>
-    appRender.update(model)
+    val context = newContext(model, s)
+    appRender.update(model, context)
   }.observeOn(sideEffectScheduler).subscribe({ _.run() })
 
   val render: SideEffectChain[M] = appRender.map(_.app)

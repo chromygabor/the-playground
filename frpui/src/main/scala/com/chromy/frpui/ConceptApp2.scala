@@ -85,7 +85,7 @@ object ConceptApp2 extends App {
   )
 
 
-  val app = new FrpApp(state = MainModel(), services = services, sideEffectScheduler = ImmediateScheduler())
+  val app = FrpApp(state = MainModel(), services = services, sideEffectScheduler = ImmediateScheduler())
 
   val u1 = Uid()
   app.onNext(Init)

@@ -74,7 +74,7 @@ class CountersController extends Controller[Counters] {
       val lcounters = prevModel.counters.diffOps(model.counters)(_.uid)
       val counters = lcounters.map {
         case Insert(pos, item) =>
-          val component = JavaFX[CounterController](channel, subrenderer.keyOption(item.uid), item)
+          val component = JavaFX[CounterController](context, subrenderer.keyOption(item.uid), item)
           Insert(pos, component)
         case Remove(pos) => Remove(pos)
         case Move(from, to) => Move(from, to)

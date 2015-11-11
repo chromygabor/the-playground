@@ -59,7 +59,7 @@ object ConceptApp extends App {
     val leftComponents = ArrayBuffer[LeftSubComponent]()
     val rightComponenets = scala.collection.mutable.Map[Uid, RightSubComponent]()
 
-    val subscriber = Render.scan[MainModel](initialState) { (prev, model) =>
+    val subscriber = Renderer[MainModel](initialState) { (prev, model) =>
       /*
       Rendering left as a List
       */
@@ -82,6 +82,7 @@ object ConceptApp extends App {
             KeyRemove[Uid, RightSubComponent](key: Uid)
        }
 
+      def context = ???
 
       SideEffect {
         println(s"[MainComponent] $prev => $model")
@@ -89,7 +90,7 @@ object ConceptApp extends App {
         left.foreach {
           case Insert(pos, component) =>
             leftComponents.insert(pos, component)
-            component.render.update(component.initialState).run()
+            component.render.update(component.initialState, context).run()
           case Remove(pos) =>
             leftComponents.remove(pos)
           case Move(from, to) =>
@@ -99,7 +100,7 @@ object ConceptApp extends App {
 
         right.foreach {
           case KeyUpdate(key, component) =>
-            component.render.update(component.initialState).run()
+            component.render.update(component.initialState, context).run()
             rightComponenets.update(key, component)
           case KeyRemove(key) =>
             rightComponenets.remove(key)
@@ -110,7 +111,7 @@ object ConceptApp extends App {
   }
 
   case class LeftSubComponent(render: SideEffectChain[LeftSubmodel], initialState: LeftSubmodel) extends Component[LeftSubmodel] {
-    val subscriber = Render[LeftSubmodel] { model =>
+    val subscriber = Renderer[LeftSubmodel] { model: LeftSubmodel =>
       SideEffect {
         println(s"[LeftSubComponent#${initialState.uid}] $model" )
       }
@@ -120,7 +121,7 @@ object ConceptApp extends App {
   }
 
   case class RightSubComponent(render: SideEffectChain[RightSubmodel], initialState: RightSubmodel) extends Component[RightSubmodel] {
-    val subscriber = Render[RightSubmodel] {model =>
+    val subscriber = Renderer[RightSubmodel] {model: RightSubmodel =>
       SideEffect {
         println(s"[RightSubComponent#${initialState.uid}] $model")
       }
@@ -132,15 +133,17 @@ object ConceptApp extends App {
   val initialModel = MainModel()
   val render = SideEffectChain[MainModel]()
 
+  val context = new Context {
+    override def getService[B : Manifest]: B = ???
+
+    override def onAction(action: Event): Unit = s.onNext(action)
+  }
+  
   val stream = s.scan(initialModel) { (model, action) =>
     println(s"================== Action received: $action")
-    model.step(action)(new Context {
-      override def getService[B : Manifest]: B = ???
-
-      override def onAction(action: Event): Unit = s.onNext(action)
-    })
+    model.step(action)(context)
   }.subscribe({ model =>
-    render.update(model).run()
+    render.update(model, context).run()
   })
 
   val m = MainComponent(render, initialModel)
