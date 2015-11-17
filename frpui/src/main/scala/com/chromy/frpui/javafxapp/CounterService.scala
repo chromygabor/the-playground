@@ -8,6 +8,8 @@ import scala.collection.immutable.ListMap
  * Created by cry on 2015.11.06..
  */
 trait CounterService {
+  def addCounter(): Unit = ???
+
   def subscribe(uid: Uid): Unit
 
   def increment(uid: Uid): Unit

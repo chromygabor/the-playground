@@ -61,4 +61,10 @@ trait Behavior[M <: BaseModel] {
     override def isDefinedAt(x: Event): Boolean = false
     override def apply(v1: Event): BehaviorAction[M] = ???
   }
+
+  def command(f: (BehaviorContext, M) => Unit): ((Context, M) => Unit) = new ((Context, M) => Unit) {
+    override def apply(context: Context, model: M): Unit = {
+      f(BehaviorContext(context, model.uid), model) 
+    }
+  }
 }

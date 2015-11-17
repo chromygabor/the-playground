@@ -28,6 +28,9 @@ case class Counters(val uid: Uid = Uid(), counters: List[Counter] = Nil) extends
 }
 
 object Counters extends Behavior[Counters] {
+  
+  case object DummyEvent extends Event
+  
   private def resultReceived = Action { (context, model) =>
     println(s"ResultReceived: $model")
     model.copy(counters = Counter() :: model.counters)
@@ -43,6 +46,13 @@ object Counters extends Behavior[Counters] {
       context.onAction(resultReceived)
     }
     model
+  }
+
+  
+  val addCounter = command { (context, model) =>
+    println(s"AddCounter was called with $model")
+    //val service = context.getService[CounterService]
+    //service.addCounter()
   }
 }
 
@@ -64,10 +74,11 @@ class CountersController extends Controller[Counters] {
   }
   
   override lazy val renderer =
-    Renderer { implicit model =>
+    asRenderer { (context, model) =>
       SideEffect {
         //println(s"SideEffect (C) get run")
-        bAdd.setOnAction(() => onAction(Counters.addClicked))
+        //bAdd.setOnAction(() => context.onAction() onAction(Counters.addClicked))
+        bAdd.setOnAction(() => context.command(Counters.addCounter))
       }
     } ++ Renderer { (prevModel, model) =>
       //println(s"Subscriber get called: $prevModel -> $model")

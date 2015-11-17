@@ -8,6 +8,18 @@ import com.chromy.frpui.fw.core._
 /**
  * Created by cry on 2015.11.01..
  */
+
+
+trait ControllerContext[M] {
+  def command(f: (Context, M) => Unit): Unit
+}
+
+object ControllerContext {
+  def apply[M](context: Context, model: M) : ControllerContext[M] = new ControllerContext[M] {
+    override def command(f: (Context, M) => Unit): Unit = f.apply(context, model)
+  }
+}
+
 trait BaseController {
   type C <: BaseModel
 
@@ -28,12 +40,6 @@ trait BaseController {
   }
 
   protected def context: Context = _context.get
-  
-//  protected def channel: Event => Unit = {
-//    val r = _initialState.get
-//    if (r == null) throw new IllegalAccessError("The initialState is accessible only after the init method was called")
-//    r._2
-//  }
 
   protected def render: SideEffectChain[C] = {
     val r = _initialState.get
@@ -51,6 +57,31 @@ trait BaseController {
     render.update(render.lastItem.getOrElse(initialState), context)
   }
 
+  def asRenderer(f: (ControllerContext[C], C) => SideEffect): Renderer[C] = new Renderer[C] {
+    override def apply(model: C, context: Context): SideEffect = {
+      f(ControllerContext[C](context, model), model)
+    }
+    override def toString(): String = "Renderer"
+  }
+
+  def asRenderer(f: (ControllerContext[C], C, C) => SideEffect): Renderer[C] = new Renderer[C] {
+    val prevValue = new AtomicReference[C](initialState)
+
+    override def apply(in: C, context: Context): SideEffect = {
+      _context.set(context)
+
+      if (in != prevValue.get) {
+        val oldValue = prevValue.get
+        prevValue.set(in)
+        f(ControllerContext[C](context, in), oldValue, in)
+      } else {
+        SideEffect()
+      }
+    }
+    override def toString(): String = "Renderer"
+  }
+  
+  
   protected object Renderer {
     def apply(): Renderer[C] = new Renderer[C] {
       override def apply(model: C, context: Context): SideEffect = {
