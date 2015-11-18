@@ -3,7 +3,7 @@ package com.chromy.frpui.javafxapp
 import javafx.fxml.FXML
 import javafx.scene.control.{Button, Label}
 
-import com.chromy.frpui.Renderer
+import com.chromy.frpui.{RendererContext, Renderer}
 import com.chromy.frpui.fw.core._
 import com.chromy.frpui.fw.javafx.Controller
 import com.chromy.frpui.fw.javafx.Utils._
@@ -86,16 +86,17 @@ class CounterController extends Controller[Counter] {
   lazy val btnDecrement = _btnDecrement
   lazy val btnClose = _btnClose
 
-  override lazy val renderer: Renderer[Counter] = Renderer { implicit model =>
-      SideEffect {
-        lblCounter.setText(s"${model.uid} ${model.value.toString}")
-
-        btnIncrement.setOnAction(() => onAction(Counter.increment))
-
-        btnDecrement.setOnAction(() => onAction(Counter.decrement))
-
-        btnClose.setOnAction(() => onAction(Counter.close))
-      }
-    }
+  override lazy val renderer: Renderer[Counter, RendererContext] = ??? 
+//    Renderer { implicit model =>
+//      SideEffect {
+//        lblCounter.setText(s"${model.uid} ${model.value.toString}")
+//
+//        btnIncrement.setOnAction(() => onAction(Counter.increment))
+//
+//        btnDecrement.setOnAction(() => onAction(Counter.decrement))
+//
+//        btnClose.setOnAction(() => onAction(Counter.close))
+//      }
+//    }
   
 }
