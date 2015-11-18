@@ -1,5 +1,7 @@
 package com.chromy.frpui.fw.core
 
+import com.chromy.frpui.RendererChain.RendererChain
+import com.chromy.frpui.{Renderer, RendererChain}
 import monocle.macros.GenLens
 import rx.lang.scala.schedulers.ComputationScheduler
 import rx.lang.scala.{Scheduler, Subject}
@@ -82,18 +84,26 @@ object StartApp extends Event //It starts the loop
 class JavaFxApp[M <: BaseModel](state: M, services: Map[Class[_], ServiceBuilder[_]] = Map.empty,
                    updateScheduler: Scheduler = ComputationScheduler(),
                    renderScheduler: Scheduler = ComputationScheduler(),
-                   sideEffectScheduler: Scheduler, f: (Context, SideEffectChain[M], M) => SideEffect) extends FrpApp[M](state, services, updateScheduler)  {
+                   sideEffectScheduler: Scheduler, f: (RendererContext, RendererChain[M], M) => SideEffect) extends FrpApp[M](state, services, updateScheduler)  {
 
-  private val render: SideEffectChain[M] = SideEffectChain[M]
+  private val render: RendererChain[M] = RendererChain[M]
 
+  def rendererContext(model: AppModel): RendererContext = {
+    new RendererContext {
+      override def subscribeToService[B <: BaseService: Manifest](renderer: Renderer[B, RendererContext]): Unit = ???
+
+      override def context: Context = ???
+    }
+  }
+  
   val sideEffectStream = modelStream.observeOn(renderScheduler).drop(2).map { model =>
-    val context = newContext(model)
+    val context = rendererContext(model)
     render.update(model.app, context)
   }.observeOn(sideEffectScheduler).subscribe({ _.run() })
 
 
   val initSideEffect = modelStream.observeOn(renderScheduler).drop(1).take(1).map { model =>
-    val context = newContext(model)
+    val context = rendererContext(model)
     f(context, render, model.app)
   }.observeOn(sideEffectScheduler).subscribe({ _.run() })
 
@@ -104,5 +114,5 @@ object JavaFxApp {
   def apply[M <: BaseModel](state: M, services: Map[Class[_], ServiceBuilder[_]] = Map.empty,
             updateScheduler: Scheduler = ComputationScheduler(),
             renderScheduler: Scheduler = ComputationScheduler(),
-            sideEffectScheduler: Scheduler)(f: (Context, SideEffectChain[M], M) => SideEffect): JavaFxApp[M] = new JavaFxApp[M](state, services, updateScheduler, renderScheduler, sideEffectScheduler, f) 
+            sideEffectScheduler: Scheduler)(f: (RendererContext, RendererChain[M], M) => SideEffect): JavaFxApp[M] = new JavaFxApp[M](state, services, updateScheduler, renderScheduler, sideEffectScheduler, f) 
 }
