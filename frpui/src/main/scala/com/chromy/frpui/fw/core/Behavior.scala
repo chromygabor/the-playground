@@ -8,20 +8,6 @@ trait BehaviorAction[A <: BaseModel]  extends Event {
   def apply(uid: Uid): UpdateAction[A]// = new UpdateAction(uid, { (context, model) => apply(BehaviorContext(context, uid), model) })
 }
 
-trait BehaviorContext extends Context
-
-object BehaviorContext {
-  def apply(context: Context, uid: Uid): BehaviorContext = new BehaviorContext {
-    override def getService[B: Manifest]: B = context.getService[B]
-
-    override def onAction(action: Event): Unit =
-      action match {
-        case e: BehaviorAction[_] => context.onAction(e(uid))
-        case e => context.onAction(e)
-      }
-  }
-}
-
 trait Behavior[M <: BaseModel] {
   import com.chromy.frpui.fw.core.{PostOrderAction => PostA, PreOrderAction => PreA, UpdateAction}
 
