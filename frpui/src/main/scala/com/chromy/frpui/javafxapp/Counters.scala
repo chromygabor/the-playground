@@ -80,7 +80,7 @@ class CountersController extends Controller[Counters] {
         //bAdd.setOnAction(() => context.onAction() onAction(Counters.addClicked))
         bAdd.setOnAction(() => context.command(Counters.addCounter))
       }
-    } ++ Renderer { (prevModel, model) =>
+    } ++ asRenderer { (context, prevModel, model) =>
       //println(s"Subscriber get called: $prevModel -> $model")
       val lcounters = prevModel.counters.diffOps(model.counters)(_.uid)
       val counters = lcounters.map {
