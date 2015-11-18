@@ -2,7 +2,8 @@ package com.chromy.frpui.fw.javafx
 
 import java.util.concurrent.atomic.AtomicReference
 
-import com.chromy.frpui.Renderer
+import com.chromy.frpui.{RendererContext, Renderer}
+import com.chromy.frpui.RendererChain.RendererChain
 import com.chromy.frpui.fw.core._
 
 /**
@@ -10,21 +11,10 @@ import com.chromy.frpui.fw.core._
  */
 
 
-trait ControllerContext[M] {
-  def command(f: (Context, M) => Unit): Unit
-}
-
-object ControllerContext {
-  def apply[M](context: Context, model: M) : ControllerContext[M] = new ControllerContext[M] {
-    override def command(f: (Context, M) => Unit): Unit = f.apply(context, model)
-  }
-}
-
 trait BaseController {
   type C <: BaseModel
 
-  private[this] val _initialState = new AtomicReference[(C, SideEffectChain[C])]()
-  private[this] val _context = new AtomicReference[Context]()
+  private[this] val _initialState = new AtomicReference[(C, RendererChain[C])]()
 
   protected def initialState: C = {
     val r = _initialState.get
@@ -32,24 +22,22 @@ trait BaseController {
     r._1
   }
 
-  protected def onAction(action: Event)(implicit model: C) = {
-    action match {
-      case e: BehaviorAction[_] => context.onAction(e(model.uid))
-      case e => context.onAction(e)
-    }
+  protected def onAction(action: Event)(implicit model: C): Unit = {
+//    action match {
+//      case e: BehaviorAction[_] => context.onAction(e(model.uid))
+//      case e => context.onAction(e)
+//    }
   }
 
-  protected def context: Context = _context.get
-
-  protected def render: SideEffectChain[C] = {
+  protected def render: RendererChain[C] = {
     val r = _initialState.get
     if (r == null) throw new IllegalAccessError("The initialState is accessible only after the init method was called")
     r._2
   }
 
-  protected val renderer: Renderer[C]
+  protected val renderer: Renderer[C, RendererContext]
 
-  def init(context: Context, render: SideEffectChain[C], initialState: C): SideEffect = {
+  def init(context: RendererContext, render: RendererChain[C], initialState: C): SideEffect = {
     val distinctRender = render.distinctUntilChanged  
     _initialState.set((initialState, distinctRender))
     distinctRender.subscribe(renderer)
@@ -57,18 +45,17 @@ trait BaseController {
     render.update(render.lastItem.getOrElse(initialState), context)
   }
 
-  def asRenderer(f: (ControllerContext[C], C) => SideEffect): Renderer[C] = new Renderer[C] {
-    override def apply(model: C, context: Context): SideEffect = {
+  def asRenderer(f: (ControllerContext[C], C) => SideEffect): Renderer[C, RendererContext] = new Renderer[C, RendererContext] {
+    override def apply(model: C, context: RendererContext): SideEffect = {
       f(ControllerContext[C](context, model), model)
     }
     override def toString(): String = "Renderer"
   }
 
-  def asRenderer(f: (ControllerContext[C], C, C) => SideEffect): Renderer[C] = new Renderer[C] {
+  def asRenderer(f: (ControllerContext[C], C, C) => SideEffect): Renderer[C, RendererContext] = new Renderer[C, RendererContext] {
     val prevValue = new AtomicReference[C](initialState)
 
-    override def apply(in: C, context: Context): SideEffect = {
-      _context.set(context)
+    override def apply(in: C, context: RendererContext): SideEffect = {
 
       if (in != prevValue.get) {
         val oldValue = prevValue.get
@@ -82,39 +69,39 @@ trait BaseController {
   }
   
   
-  protected object Renderer {
-    def apply(): Renderer[C] = new Renderer[C] {
-      override def apply(model: C, context: Context): SideEffect = {
-        _context.set(context)
-        SideEffect()
-      }
-    }
-
-    def apply(f: C => SideEffect): Renderer[C] = new Renderer[C] {
-      override def apply(model: C, context: Context): SideEffect = {
-        _context.set(context)
-        f(model)
-      }
-      override def toString(): String = "Renderer"
-    }
-
-    def apply(f: (C, C) => SideEffect): Renderer[C] = new Renderer[C] {
-      val prevValue = new AtomicReference[C](initialState)
-
-      override def apply(in: C, context: Context): SideEffect = {
-        _context.set(context)
-
-        if (in != prevValue.get) {
-          val oldValue = prevValue.get
-          prevValue.set(in)
-          f(oldValue, in)
-        } else {
-          SideEffect()
-        }
-      }
-      override def toString(): String = "Renderer"
-    }
-  }
+//  protected object Renderer {
+//    def apply(): Renderer[C] = new Renderer[C] {
+//      override def apply(model: C, context: Context): SideEffect = {
+//        _context.set(context)
+//        SideEffect()
+//      }
+//    }
+//
+//    def apply(f: C => SideEffect): Renderer[C] = new Renderer[C] {
+//      override def apply(model: C, context: Context): SideEffect = {
+//        _context.set(context)
+//        f(model)
+//      }
+//      override def toString(): String = "Renderer"
+//    }
+//
+//    def apply(f: (C, C) => SideEffect): Renderer[C] = new Renderer[C] {
+//      val prevValue = new AtomicReference[C](initialState)
+//
+//      override def apply(in: C, context: Context): SideEffect = {
+//        _context.set(context)
+//
+//        if (in != prevValue.get) {
+//          val oldValue = prevValue.get
+//          prevValue.set(in)
+//          f(oldValue, in)
+//        } else {
+//          SideEffect()
+//        }
+//      }
+//      override def toString(): String = "Renderer"
+//    }
+//  }
 
 }
 
