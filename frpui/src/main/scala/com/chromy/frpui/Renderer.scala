@@ -2,19 +2,19 @@ package com.chromy.frpui
 
 import java.util.concurrent.atomic.AtomicReference
 
-import com.chromy.frpui.fw.core.{Context, SideEffect}
+import com.chromy.frpui.fw.core._
 
 /**
  * Created by cry on 2015.11.01..
  */
-trait Renderer[A] extends ((A, Context) => SideEffect) {
+trait Renderer[M <: BaseModel, C] extends ((M, C) => SideEffect) {
 
-  def ++(renderer: Renderer[A]): Renderer[A] = {
+  def ++(renderer: Renderer[M, C]): Renderer[M, C] = {
     val parentThis = this
-    new Renderer[A] {
+    new Renderer[M, C] {
       private val parent = parentThis
 
-      override def apply(model: A, context: Context): SideEffect = {
+      override def apply(model: M, context: C): SideEffect = {
         SideEffect {
           parent(model, context).run()
           renderer(model, context).run()
@@ -26,21 +26,20 @@ trait Renderer[A] extends ((A, Context) => SideEffect) {
 
 object Renderer {
 
-  def apply[C](): Renderer[C] = new Renderer[C] {
-    //override val subscriber: (C) => SideEffect = { _ => SideEffect() }
-    override def apply(model: C, context: Context): SideEffect = SideEffect()
+  def apply[M <: BaseModel](): Renderer[M, Null] = new Renderer[M, Null] {
+    override def apply(model: M, context: Null): SideEffect = SideEffect()
   }
 
-  def apply[C](f: C => SideEffect): Renderer[C] = new Renderer[C] {
-    //      override val subscriber: (C) => SideEffect = { model => f(model) }
-    override def apply(model: C, context: Context): SideEffect = f(model)
+  def apply[M <: BaseModel](f: M => SideEffect): Renderer[M, Null] = new Renderer[M, Null] {
+    //      override val subscriber: (M) => SideEffect = { model => f(model) }
+    override def apply(model: M, context: Null): SideEffect = f(model)
     override def toString(): String = "Renderer"
   }
 
-  def apply[C](initialState: C)(f: (C, C) => SideEffect): Renderer[C] = new Renderer[C] {
-    val prevValue = new AtomicReference[C](initialState)
+  def apply[M <: BaseModel](initialState: M)(f: (M, M) => SideEffect): Renderer[M, Null] = new Renderer[M, Null] {
+    val prevValue = new AtomicReference[M](initialState)
 
-    override def apply(in: C, context: Context): SideEffect = {
+    override def apply(in: M, context: Null): SideEffect = {
       if (in != prevValue.get) {
         val oldValue = prevValue.get
         prevValue.set(in)
@@ -52,4 +51,9 @@ object Renderer {
     override def toString(): String = "Renderer"
   }
   
+}
+
+object RendererChain {
+  type RendererChain[T <: BaseModel] = SideEffectChain[T, RendererContext]
+  def apply[T <: BaseModel](): SideEffectChain[T, RendererContext] = new SideEffectChain[T, RendererContext] { }
 }
