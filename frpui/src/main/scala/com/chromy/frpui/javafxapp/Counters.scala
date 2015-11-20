@@ -19,8 +19,9 @@ import scala.util.{Failure, Success}
 case class Counters(val uid: Uid = Uid(), counters: List[Counter] = Nil) extends Model[Counters] {
   override val children = List(Child(GenLens[Counters](_.counters)))
 
-  override def handle(implicit context: Context): EventHandler[Counters] = EventHandler{
+  override def handle(implicit context: UpdateContext): EventHandler[Counters] = EventHandler {
     case Init => 
+      println("Init was called")  //We should fix this
       this
     case _ =>
       copy(counters = counters.collect{case e: ActiveCounter => e})
@@ -29,30 +30,30 @@ case class Counters(val uid: Uid = Uid(), counters: List[Counter] = Nil) extends
 
 object Counters extends Behavior[Counters] {
   
-  case object DummyEvent extends Event
+//  case object DummyEvent extends Event
   
-  private def resultReceived = Action { (context, model) =>
-    println(s"ResultReceived: $model")
-    model.copy(counters = Counter() :: model.counters)
-  }
-
-  def addClicked = Action { (context, model) =>
-    import scala.concurrent.ExecutionContext.Implicits.global
-
-    Future {
-      println("Sleeping for 1 sec")
-      Thread.sleep(100)
-      println("Sleeping is over")
-      context.onAction(resultReceived)
-    }
-    model
-  }
+//  private def resultReceived = Action { (context, model) =>
+//    println(s"ResultReceived: $model")
+//    model.copy(counters = Counter() :: model.counters)
+//  }
+//
+//  def addClicked = Action { (context, model) =>
+//    import scala.concurrent.ExecutionContext.Implicits.global
+//
+//    Future {
+//      println("Sleeping for 1 sec")
+//      Thread.sleep(100)
+//      println("Sleeping is over")
+//      context.onAction(resultReceived)
+//    }
+//    model
+//  }
 
   
   val addCounter = command { (context, model) =>
     println(s"AddCounter was called with $model")
-    //val service = context.getService[CounterService]
-    //service.addCounter()
+    val service = context.getService[CounterService]
+    service.addCounter()
   }
 }
 
@@ -76,9 +77,7 @@ class CountersController extends Controller[Counters] {
   override lazy val renderer =
     asRenderer { (context, model) =>
       SideEffect {
-        //println(s"SideEffect (C) get run")
-        //bAdd.setOnAction(() => context.onAction() onAction(Counters.addClicked))
-        bAdd.setOnAction(() => context.command(Counters.addCounter))
+        bAdd.setOnAction(() => context.call(Counters.addCounter))
       }
     } ++ asRenderer { (context, prevModel, model) =>
       //println(s"Subscriber get called: $prevModel -> $model")
