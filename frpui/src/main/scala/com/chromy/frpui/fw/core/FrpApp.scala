@@ -24,13 +24,15 @@ object FrpApp {
 abstract class FrpApp[M](state: M, services: Map[Class[_], ServiceBuilder[_]] = Map.empty, 
                          updateScheduler: Scheduler = ComputationScheduler()) {
 
+  private case object InitServices extends Event 
+  
   protected val aggregatedRoot = Subject[Event]
   
   val onNext: Event => Unit = { action =>
     aggregatedRoot.onNext(action)
   }
 
-  protected def newContext(model: AppModel) = new Context {
+  protected def updateContext(model: AppModel) = new UpdateContext {
     def onAction(action: Event): Unit = {
       FrpApp.this.onNext(action)
     }
@@ -43,39 +45,46 @@ abstract class FrpApp[M](state: M, services: Map[Class[_], ServiceBuilder[_]] = 
       val sb = services.getOrElse(clazz, throw new IllegalStateException(s"Service was not found in config: $serviceName"))
       val serviceKey = sb.key
 
-      val service = model.services.getOrElse(serviceKey, {
-        if (m.runtimeClass.isAssignableFrom(sb.clazz)) {
-          val srv = sb.initialValue.asInstanceOf[BaseService].step(Init)(this).asInstanceOf[BaseService]
-          aggregatedRoot.onNext(ServiceBuilder.ServiceAdded(serviceKey, srv))
-          srv
-        } else {
-          throw new IllegalStateException("Service builder type doesn't fit")
-        }
-      })
+      val service = model.services.getOrElse(serviceKey, throw new IllegalStateException(s"Service not found with key: $serviceKey"))
       service.api(this).asInstanceOf[B]
     }
   }
 
+  
   protected case class AppModel(app: M = state, services: Map[String, BaseService] = Map(), uid: Uid = Uid()) extends Model[AppModel] {
     override lazy val children = List(
       Child(GenLens[AppModel](_.services)),
       Child(GenLens[AppModel](_.app))
     )
 
-    override def handle(implicit context: Context): EventHandler[AppModel] = EventHandler {
-      case ServiceBuilder.ServiceAdded(key, service) => copy(services = services.updated(key, service))
+    override def handle(implicit context: UpdateContext): EventHandler[AppModel] = EventHandler {
+      case InitServices =>
+        val newServices =  this.services.map { case (clazz, service) =>
+          clazz -> service.step(Init).asInstanceOf[BaseService]
+        }
+        copy(services = newServices)
       case _ => this
     }
   }
 
+  val initialValue = services.foldLeft(AppModel()) { case (appModel, (clazz, serviceBuilder)) =>
+    val initialValue = serviceBuilder.initialValue.asInstanceOf[BaseService]
+    val newServices = appModel.services.updated(serviceBuilder.key, initialValue)
+    appModel.copy(services = newServices)
+  }
+  
   protected val modelStream = Subject[AppModel]
 
-  private[this] val stream = aggregatedRoot.observeOn(updateScheduler).scan(AppModel()) { (model, action) =>
+  //Update side
+  private[this] val stream = aggregatedRoot.observeOn(updateScheduler).scan(initialValue) { (model, action) =>
     println(s"======= Action received: $action")
-    implicit val context = newContext(model)
-    model.step(action)
+    val context = updateContext(model)
+    model.step(action)(context)
   }
+  
   stream.subscribe( {model => modelStream.onNext(model)})
+
+  aggregatedRoot.onNext(InitServices)
   
 }
 
@@ -84,16 +93,14 @@ object StartApp extends Event //It starts the loop
 class JavaFxApp[M <: BaseModel](state: M, services: Map[Class[_], ServiceBuilder[_]] = Map.empty,
                    updateScheduler: Scheduler = ComputationScheduler(),
                    renderScheduler: Scheduler = ComputationScheduler(),
-                   sideEffectScheduler: Scheduler, f: (RendererContext, RendererChain[M], M) => SideEffect) extends FrpApp[M](state, services, updateScheduler)  {
+                   sideEffectScheduler: Scheduler, f: (RenderContext, RendererChain[M], M) => SideEffect) extends FrpApp[M](state, services, updateScheduler)  {
 
   private val render: RendererChain[M] = RendererChain[M]
 
-  def rendererContext(model: AppModel): RendererContext = {
-    new RendererContext {
-      override def subscribeToService[B <: BaseService: Manifest](renderer: Renderer[B, RendererContext]): Unit = ???
+  def rendererContext(model: AppModel): RenderContext = new RenderContext {
+    override def updateContext: UpdateContext = JavaFxApp.this.updateContext(model)
 
-      override def context: Context = ???
-    }
+    override def subscribeToService[B <: BaseService : Manifest](renderer: Renderer[B, RenderContext]): Unit = ???
   }
   
   val sideEffectStream = modelStream.observeOn(renderScheduler).drop(2).map { model =>
@@ -114,5 +121,5 @@ object JavaFxApp {
   def apply[M <: BaseModel](state: M, services: Map[Class[_], ServiceBuilder[_]] = Map.empty,
             updateScheduler: Scheduler = ComputationScheduler(),
             renderScheduler: Scheduler = ComputationScheduler(),
-            sideEffectScheduler: Scheduler)(f: (RendererContext, RendererChain[M], M) => SideEffect): JavaFxApp[M] = new JavaFxApp[M](state, services, updateScheduler, renderScheduler, sideEffectScheduler, f) 
+            sideEffectScheduler: Scheduler)(f: (RenderContext, RendererChain[M], M) => SideEffect): JavaFxApp[M] = new JavaFxApp[M](state, services, updateScheduler, renderScheduler, sideEffectScheduler, f) 
 }
