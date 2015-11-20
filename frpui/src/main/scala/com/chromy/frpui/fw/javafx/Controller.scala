@@ -2,7 +2,7 @@ package com.chromy.frpui.fw.javafx
 
 import java.util.concurrent.atomic.AtomicReference
 
-import com.chromy.frpui.{RendererContext, Renderer}
+import com.chromy.frpui.Renderer
 import com.chromy.frpui.RendererChain.RendererChain
 import com.chromy.frpui.fw.core._
 
@@ -35,9 +35,9 @@ trait BaseController {
     r._2
   }
 
-  protected val renderer: Renderer[C, RendererContext]
+  protected val renderer: Renderer[C, RenderContext]
 
-  def init(context: RendererContext, render: RendererChain[C], initialState: C): SideEffect = {
+  def init(context: RenderContext, render: RendererChain[C], initialState: C): SideEffect = {
     val distinctRender = render.distinctUntilChanged  
     _initialState.set((initialState, distinctRender))
     distinctRender.subscribe(renderer)
@@ -45,17 +45,17 @@ trait BaseController {
     render.update(render.lastItem.getOrElse(initialState), context)
   }
 
-  def asRenderer(f: (ControllerContext[C], C) => SideEffect): Renderer[C, RendererContext] = new Renderer[C, RendererContext] {
-    override def apply(model: C, context: RendererContext): SideEffect = {
+  def asRenderer(f: (ControllerContext[C], C) => SideEffect): Renderer[C, RenderContext] = new Renderer[C, RenderContext] {
+    override def apply(model: C, context: RenderContext): SideEffect = {
       f(ControllerContext[C](context, model), model)
     }
     override def toString(): String = "Renderer"
   }
 
-  def asRenderer(f: (ControllerContext[C], C, C) => SideEffect): Renderer[C, RendererContext] = new Renderer[C, RendererContext] {
+  def asRenderer(f: (ControllerContext[C], C, C) => SideEffect): Renderer[C, RenderContext] = new Renderer[C, RenderContext] {
     val prevValue = new AtomicReference[C](initialState)
 
-    override def apply(in: C, context: RendererContext): SideEffect = {
+    override def apply(in: C, context: RenderContext): SideEffect = {
 
       if (in != prevValue.get) {
         val oldValue = prevValue.get
