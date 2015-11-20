@@ -15,7 +15,7 @@ object CountersApp extends App {
   new JFXPanel()
 
   lazy val services = Map[Class[_], ServiceBuilder[_]](
-    classOf[CounterService] -> ServiceBuilder.singleton(CounterServiceImpl())
+    classOf[CounterService] -> ServiceBuilder(CounterServiceImpl())
   )
 
   val initialState = Counters()
