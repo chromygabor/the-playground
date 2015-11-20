@@ -6,7 +6,7 @@ package com.chromy.frpui.fw.core
 trait BaseService extends BaseModel {
   type I
 
-  def api(context: Context): I
+  def api(context: UpdateContext): I
 }
 
 trait Service[INTF, MODEL <: BaseModel] extends BaseService {
@@ -25,9 +25,7 @@ trait ServiceBuilder[A <: BaseService] {
 
 object ServiceBuilder {
 
-  case class ServiceAdded[B <: BaseService](serviceName: String, service: B) extends Event
-
-  def singleton[A <: BaseService : Manifest](iInitialValue: A)(implicit ev: Manifest[A#I]): ServiceBuilder[A] = new ServiceBuilder[A] {
+  def apply[A <: BaseService : Manifest](iInitialValue: A)(implicit ev: Manifest[A#I]): ServiceBuilder[A] = new ServiceBuilder[A] {
     val m = manifest[A#I]
     override lazy val initialValue: A = iInitialValue
 
