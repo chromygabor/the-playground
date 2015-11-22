@@ -11,6 +11,7 @@ import com.chromy.frpui.Renderer
 trait UpdateContext {
   def getService[B : Manifest]: B
   def onAction(action: Event): Unit
+  def publish(event: Event): Unit
 }
 
 trait RenderContext {

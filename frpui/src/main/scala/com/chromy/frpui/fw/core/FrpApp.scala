@@ -48,6 +48,8 @@ abstract class FrpApp[M](state: M, services: Map[Class[_], ServiceBuilder[_]] = 
       val service = model.services.getOrElse(serviceKey, throw new IllegalStateException(s"Service not found with key: $serviceKey"))
       service.api(this).asInstanceOf[B]
     }
+
+    override def publish(event: Event): Unit = ???
   }
 
   

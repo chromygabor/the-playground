@@ -29,31 +29,10 @@ case class Counters(val uid: Uid = Uid(), counters: List[Counter] = Nil) extends
 }
 
 object Counters extends Behavior[Counters] {
-  
-//  case object DummyEvent extends Event
-  
-//  private def resultReceived = Action { (context, model) =>
-//    println(s"ResultReceived: $model")
-//    model.copy(counters = Counter() :: model.counters)
-//  }
-//
-//  def addClicked = Action { (context, model) =>
-//    import scala.concurrent.ExecutionContext.Implicits.global
-//
-//    Future {
-//      println("Sleeping for 1 sec")
-//      Thread.sleep(100)
-//      println("Sleeping is over")
-//      context.onAction(resultReceived)
-//    }
-//    model
-//  }
-
-  
   val addCounter = command { (context, model) =>
     println(s"AddCounter was called with $model")
     val service = context.getService[CounterService]
-    service.addCounter()
+    service.addCounter
   }
 }
 
@@ -75,11 +54,11 @@ class CountersController extends Controller[Counters] {
   }
   
   override lazy val renderer =
-    asRenderer { (context, model) =>
+    Renderer { (context, model) =>
       SideEffect {
         bAdd.setOnAction(() => context.call(Counters.addCounter))
       }
-    } ++ asRenderer { (context, prevModel, model) =>
+    } ++ Renderer { (context, prevModel, model) =>
       //println(s"Subscriber get called: $prevModel -> $model")
       val lcounters = prevModel.counters.diffOps(model.counters)(_.uid)
       val counters = lcounters.map {

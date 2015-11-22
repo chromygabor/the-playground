@@ -4,7 +4,7 @@ import javafx.fxml.FXMLLoader
 import javafx.scene.Parent
 
 import com.chromy.frpui.RendererChain.RendererChain
-import com.chromy.frpui.fw.core.{RendererContext, SideEffect}
+import com.chromy.frpui.fw.core.{RenderContext, SideEffect}
 
 import scala.util.Try
 
@@ -12,7 +12,7 @@ import scala.util.Try
  * Created by cry on 2015.11.01..
  */
 object JavaFX {
-  def apply[M <: BaseController : Manifest](context: RendererContext, render: RendererChain[M#C], initialState: M#C): Try[(Parent, M, SideEffect)] = {
+  def apply[M <: BaseController : Manifest](context: RenderContext, render: RendererChain[M#C], initialState: M#C): Try[(Parent, M, SideEffect)] = {
     val ct = manifest[M]
 
     Try {

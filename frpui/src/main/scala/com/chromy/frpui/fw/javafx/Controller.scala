@@ -45,14 +45,14 @@ trait BaseController {
     render.update(render.lastItem.getOrElse(initialState), context)
   }
 
-  def asRenderer(f: (ControllerContext[C], C) => SideEffect): Renderer[C, RenderContext] = new Renderer[C, RenderContext] {
+  def Renderer(f: (ControllerContext[C], C) => SideEffect): Renderer[C, RenderContext] = new Renderer[C, RenderContext] {
     override def apply(model: C, context: RenderContext): SideEffect = {
       f(ControllerContext[C](context, model), model)
     }
     override def toString(): String = "Renderer"
   }
 
-  def asRenderer(f: (ControllerContext[C], C, C) => SideEffect): Renderer[C, RenderContext] = new Renderer[C, RenderContext] {
+  def Renderer(f: (ControllerContext[C], C, C) => SideEffect): Renderer[C, RenderContext] = new Renderer[C, RenderContext] {
     val prevValue = new AtomicReference[C](initialState)
 
     override def apply(in: C, context: RenderContext): SideEffect = {

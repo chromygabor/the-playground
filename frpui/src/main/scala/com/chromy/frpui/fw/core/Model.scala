@@ -2,6 +2,8 @@ package com.chromy.frpui.fw.core
 
 import monocle._
 
+import scala.concurrent.Future
+
 /**
  * Created by cry on 2015.10.18..
  */
@@ -10,11 +12,21 @@ case object Init extends Event
 
 case class Targeted(target: Uid, action: Event) extends Event
 
-trait Command[M] extends Event {
+trait Action[M] extends Event {
   def uid: Uid
 
   def apply(context: UpdateContext, model: M): Unit
 }
+
+abstract class Command[M <: BaseModel: Manifest] extends Event {
+  def isAcceptable(m: BaseModel): Boolean = {
+    manifest[M].runtimeClass.isAssignableFrom(m.getClass)
+  }
+
+  def apply(context: UpdateContext, model: M): M
+  def notification(context: UpdateContext, newModel: M): Event
+}
+
 
 trait PostOrderAction
 
@@ -69,6 +81,9 @@ case class Child[M, B](lens: Lens[M, B]) {
 }
 
 object BaseModel {
+  
+  import scala.concurrent.ExecutionContext.Implicits.global
+  
   def step[A <: BaseModel](action: Event, model: A, children: List[Child[A, _]], handle: EventHandler[A])(implicit context: UpdateContext): A = {
     action match {
       case _ =>
@@ -80,11 +95,25 @@ object BaseModel {
               child.step(action, previousModel, model)
             }
             action match {
-              case d: Command[_] if d.uid == model.uid =>
-                val command = d.asInstanceOf[Command[A]]
-                command.apply(context, model)
-                model
+              
+              case a: Command[A] if a.isAcceptable(model) =>
+                val newModel = a.apply(context, model)
+                println(s"Persisting command: $action") 
+                println(s"    stepping $model -> $newModel")
+                val actionToPublish = a.notification(context, newModel)
+                println(s"    publishing $actionToPublish")
+                context.onAction(actionToPublish)
+                newModel
               case _: Command[_] =>
+                model
+              
+              case d: Action[_] if d.uid == model.uid =>
+                val command = d.asInstanceOf[Action[A]]
+                Future {
+                  command.apply(context, model)                  
+                }
+                model
+              case _: Action[_] =>
                 model
               case _ =>
                 println(s"Stepping $model for $action")
@@ -93,11 +122,25 @@ object BaseModel {
             }
           case _ =>
             val initialModel: A = action match {
-              case d: Command[_] if d.uid == model.uid =>
-                val command = d.asInstanceOf[Command[A]]
-                command.apply(context, model)
-                model
+              
+              case a: Command[A] if a.isAcceptable(model) =>
+                val newModel = a.apply(context, model)
+                println(s"Persisting command: $action")
+                println(s"    stepping $model -> $newModel")
+                val actionToPublish = a.notification(context, newModel)
+                println(s"    publishing $actionToPublish")
+                context.onAction(actionToPublish)
+                newModel
               case _: Command[_] =>
+                model
+                
+              case d: Action[_] if d.uid == model.uid =>
+                val command = d.asInstanceOf[Action[A]]
+                Future {
+                  command.apply(context, model)
+                }
+                model
+              case _: Action[_] =>
                 model
               case _ =>
                 println(s"Stepping $model for $action")

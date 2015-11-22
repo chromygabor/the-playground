@@ -1,17 +1,31 @@
 object TypeApp extends App {
 
-  trait A
-
-  case class B[T](value: T, f: (T => Boolean)) extends A
-
-  def dummy(input: A) = input match {
-    case b: B[_] =>
-      println(b.f(b.value))
-    case _ => println("else")
+  abstract class Common[A <: Com : Manifest] {
+    def acceptable[B](b: B): Boolean = {
+      //this.getClass.isAssignableFrom(b.getClass)
+      val m = manifest[A]
+      m.runtimeClass.isAssignableFrom(b.getClass)
+    }
   }
 
+  trait Com
+  class A extends Com
+  class B extends Com
+  
+  case class Foo() extends Common[A]
+  case class Bar() extends Common[B]
+  
 
+  val foo = Foo()
+  val bar = Bar()
 
-  dummy(B[Int](10, {in => true}))
+  val a = new A
+  val a2 = new A
+  val b = new B
+  
+  println(foo.acceptable(a))
+  println(foo.acceptable(b))
+  println(bar.acceptable(b))
+  
 }
 

@@ -54,6 +54,6 @@ object Renderer {
 }
 
 object RendererChain {
-  type RendererChain[T <: BaseModel] = SideEffectChain[T, RendererContext]
-  def apply[T <: BaseModel](): SideEffectChain[T, RendererContext] = new SideEffectChain[T, RendererContext] { }
+  type RendererChain[T <: BaseModel] = SideEffectChain[T, RenderContext]
+  def apply[T <: BaseModel](): SideEffectChain[T, RenderContext] = new SideEffectChain[T, RenderContext] { }
 }

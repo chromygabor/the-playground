@@ -3,17 +3,19 @@ package com.chromy.frpui.javafxapp
 import com.chromy.frpui.fw.core._
 
 import scala.collection.immutable.ListMap
+import scala.concurrent.Future
+import scala.reflect.ClassTag
 
 /**
  * Created by cry on 2015.11.06..
  */
 trait CounterService {
-  def addCounter(): Unit
+  def addCounter(): Command[_ <: Service[CounterService, _]]
 
   def subscribe(uid: Uid): Unit
 
-  def increment(uid: Uid): Unit
-
+  def increment(uid: Uid): Command[_ <: Service[CounterService, _]]
+  
   def decrement(uid: Uid): Unit
   
   def unsubscribe(uid: Uid): Unit
@@ -80,7 +82,7 @@ object CounterServiceImpl extends Behavior[CounterServiceImpl] {
 //    context.onAction(CountersChanged(stateAccessor(newModel.counters)))
 //  }
 //
-  private def stateAccessor(counters: ListMap[Uid, Int]): CounterStateAccessor = {
+  def stateAccessor(counters: ListMap[Uid, Int]): CounterStateAccessor = {
     val indexedCounters = counters.zipWithIndex.map { case ((uid, value), index) => uid ->(value, index) } toMap
 
     def createState(iUid: Uid): Option[(Uid, CounterState)] = for {
@@ -125,25 +127,38 @@ object CounterServiceImpl extends Behavior[CounterServiceImpl] {
     }
   }
   
-//  val addCounter = action { (context, model) =>
-//
-//    CounterAdded(Uid())
-//  }
 }
-trait Action extends Event
-case class AddCounter(uid: Uid) extends Action
+
+/**
+ * Add a new counter
+ * @param counterUid: Uid of the counter to add
+ */
+case class AddCounter(counterUid: Uid) extends Command[CounterServiceImpl] {
+  def apply(context: UpdateContext, model: CounterServiceImpl): CounterServiceImpl = 
+    model.copy(counters = model.counters.updated(counterUid, 0))
+  
+  def notification(context: UpdateContext, newModel: CounterServiceImpl): Event = 
+    CountersChanged(CounterServiceImpl.stateAccessor(newModel.counters))
+}
+
+/**
+ * Increment a counter
+ * @param counterUid: Uid of the counter to add
+ */
+case class IncrementCounter(counterUid: Uid) extends Command[CounterServiceImpl] {
+  def apply(context: UpdateContext, model: CounterServiceImpl): CounterServiceImpl =
+    model.copy(counters = model.counters.updated(counterUid, model.counters.getOrElse(counterUid, 0) + 1))
+
+
+  def notification(context: UpdateContext, newModel: CounterServiceImpl): Event =
+    CountersChanged(CounterServiceImpl.stateAccessor(newModel.counters))
+}
 
 case class CounterServiceImpl(uid: Uid = Uid(), counters: ListMap[Uid, Int] = ListMap()) extends Service[CounterService, CounterServiceImpl] {
-
-
   override def handle(implicit context: UpdateContext): EventHandler[CounterServiceImpl] = EventHandler {
     case Init =>
       println("CounterService Init was called")
       this
-    case AddCounter(uid) =>
-      val newModel = copy(counters = counters.updated(uid, -1)) 
-      context.onAction(CountersChanged(CounterServiceImpl.stateAccessor(newModel.counters)))
-      newModel
   }
 
   override def api(context: UpdateContext): CounterService = new CounterService {
@@ -151,10 +166,17 @@ case class CounterServiceImpl(uid: Uid = Uid(), counters: ListMap[Uid, Int] = Li
 
     override def decrement(sUid: Uid): Unit = ??? //context.onAction(CounterServiceImpl.decrement(sUid)(uid))
 
-    override def increment(sUid: Uid): Unit = ??? //context.onAction(CounterServiceImpl.increment(sUid)(uid))
 
     override def unsubscribe(sUid: Uid): Unit = ??? //context.onAction(CounterServiceImpl.unsubscribe(sUid)(uid))
+
+    override def increment(sUid: Uid) = {
+      IncrementCounter(sUid)
+    } 
     
-    override def addCounter(): Unit = context.onAction(AddCounter(Uid()))
+    override def addCounter() =  {
+      println("Sleeping")
+      Thread.sleep(1000)
+      AddCounter(Uid())
+    }
   }
 } 
