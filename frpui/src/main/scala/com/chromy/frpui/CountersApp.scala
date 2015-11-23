@@ -33,4 +33,8 @@ object CountersApp extends App {
       }
     }
   }
+  app.onNext(AddCounter(Uid("50935")))
+  app.onNext(IncrementCounter(Uid("50935")))
+  app.onNext(IncrementCounter(Uid("50935")))
+  app.onNext(AddCounter(Uid("22038")))
 }
