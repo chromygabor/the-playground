@@ -98,21 +98,33 @@ class JavaFxApp[M <: BaseModel](state: M, services: Map[Class[_], ServiceBuilder
                    sideEffectScheduler: Scheduler, f: (RenderContext, RendererChain[M], M) => SideEffect) extends FrpApp[M](state, services, updateScheduler)  {
 
   private val render: RendererChain[M] = RendererChain[M]
+  private val serviceRender: RendererChain[Map[String, BaseService]] = RendererChain[Map[String, BaseService]]
 
   def rendererContext(model: AppModel): RenderContext = new RenderContext {
     override def updateContext: UpdateContext = JavaFxApp.this.updateContext(model)
 
-    override def subscribeToService[B <: BaseService : Manifest](renderer: Renderer[B, RenderContext]): Unit = ???
+    override def subscribeToService[B <: BaseService : Manifest](renderer: Renderer[B, RenderContext]): Unit = {
+      val m = manifest[B]
+      val clazz = m.runtimeClass
+      val serviceName = m.runtimeClass.getName
+
+      val sb = services.getOrElse(clazz, throw new IllegalStateException(s"Service was not found in config: $serviceName"))
+      val serviceKey = sb.key
+      val r = serviceRender.keyOption[String, BaseService](serviceKey).asInstanceOf[RendererChain[B]]
+      r.subscribe(renderer)
+    }
   }
   
   val sideEffectStream = modelStream.observeOn(renderScheduler).drop(2).map { model =>
     val context = rendererContext(model)
+    serviceRender.update(model.services, context)
     render.update(model.app, context)
   }.observeOn(sideEffectScheduler).subscribe({ _.run() })
 
 
   val initSideEffect = modelStream.observeOn(renderScheduler).drop(1).take(1).map { model =>
     val context = rendererContext(model)
+    serviceRender.update(model.services, context)
     f(context, render, model.app)
   }.observeOn(sideEffectScheduler).subscribe({ _.run() })
 
