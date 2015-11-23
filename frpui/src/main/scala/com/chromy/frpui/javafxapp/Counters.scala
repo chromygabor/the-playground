@@ -6,11 +6,10 @@ import javafx.scene.layout.FlowPane
 
 import com.chromy.frpui.fw.core._
 import com.chromy.frpui.fw.javafx.Utils._
-import com.chromy.frpui.fw.javafx.{Controller, JavaFX, Utils}
+import com.chromy.frpui.fw.javafx.{Controller, JavaFX}
 import com.chromy.frpui.fw.util.DiffUtils._
 import monocle.macros.GenLens
 
-import scala.concurrent.Future
 import scala.util.{Failure, Success}
 
 /**
@@ -23,8 +22,8 @@ case class Counters(val uid: Uid = Uid(), counters: List[Counter] = Nil) extends
     case Init => 
       println("Init was called")  //We should fix this
       this
-    case _ =>
-      copy(counters = counters.collect{case e: ActiveCounter => e})
+    case CounterAdded(counterUid, value) =>
+      copy(counters = ActiveCounter(value = value, uid = counterUid) :: counters)
   }
 }
 
@@ -32,7 +31,7 @@ object Counters extends Behavior[Counters] {
   val addCounter = command { (context, model) =>
     println(s"AddCounter was called with $model")
     val service = context.getService[CounterService]
-    service.addCounter
+    service.addCounter()
   }
 }
 
@@ -53,8 +52,7 @@ class CountersController extends Controller[Counters] {
     }.toMap
   }
   
-  override lazy val renderer =
-    Renderer { (context, model) =>
+  override lazy val renderer = Renderer { (context, model) =>
       SideEffect {
         bAdd.setOnAction(() => context.call(Counters.addCounter))
       }
