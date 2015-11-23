@@ -15,7 +15,7 @@ case class Targeted(target: Uid, action: Event) extends Event
 trait Action[M] extends Event {
   def uid: Uid
 
-  def apply(context: UpdateContext, model: M): Unit
+  def apply(context: UpdateContext, model: M): M
 }
 
 abstract class Command[M <: BaseModel: Manifest] extends Event {
@@ -95,7 +95,6 @@ object BaseModel {
               child.step(action, previousModel, model)
             }
             action match {
-              
               case a: Command[A] if a.isAcceptable(model) =>
                 val newModel = a.apply(context, model)
                 println(s"Persisting command: $action") 
@@ -108,9 +107,9 @@ object BaseModel {
                 model
               
               case d: Action[_] if d.uid == model.uid =>
-                val command = d.asInstanceOf[Action[A]]
+                val action = d.asInstanceOf[Action[A]]
                 Future {
-                  command.apply(context, model)                  
+                  action.apply(context, model)                  
                 }
                 model
               case _: Action[_] =>
@@ -135,9 +134,9 @@ object BaseModel {
                 model
                 
               case d: Action[_] if d.uid == model.uid =>
-                val command = d.asInstanceOf[Action[A]]
+                val action = d.asInstanceOf[Action[A]]
                 Future {
-                  command.apply(context, model)
+                  action.apply(context, model)
                 }
                 model
               case _: Action[_] =>
