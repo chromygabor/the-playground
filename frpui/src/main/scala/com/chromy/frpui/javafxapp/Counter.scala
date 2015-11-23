@@ -3,9 +3,10 @@ package com.chromy.frpui.javafxapp
 import javafx.fxml.FXML
 import javafx.scene.control.{Button, Label}
 
-import com.chromy.frpui.Renderer
 import com.chromy.frpui.fw.core._
 import com.chromy.frpui.fw.javafx.Controller
+import com.chromy.frpui.fw.javafx.Utils._
+
 
 /**
  * Created by cry on 2015.10.30..
@@ -16,7 +17,10 @@ trait Counter extends Model[Counter] {
 }
 
 case class ActiveCounter(value: Int, uid: Uid = Uid()) extends Counter {
-  override def handle(implicit context: UpdateContext): EventHandler[Counter] = EventHandler()
+  override def handle(implicit context: UpdateContext): EventHandler[Counter] = EventHandler {
+    case CounterChanged(`uid`, value) =>
+      copy(value = value)
+  }
 }
 
 case class DeletedCounter(value: Int, uid: Uid = Uid()) extends Counter
@@ -71,7 +75,15 @@ object Counter extends Behavior[Counter] {
 //    DeletedCounter(0, model.uid)
 //  }
 
-  def apply() = ActiveCounter(-1)
+  val increment = command {(context, model) =>
+    val service = context.getService[CounterService]
+    service.increment(model.uid)
+  }
+
+  val decrement = command {(context, model) =>
+    val service = context.getService[CounterService]
+    service.decrement(model.uid)
+  }
 }
 
 class CounterController extends Controller[Counter] {
@@ -85,17 +97,16 @@ class CounterController extends Controller[Counter] {
   lazy val btnDecrement = _btnDecrement
   lazy val btnClose = _btnClose
 
-  override lazy val renderer: Renderer[Counter, RenderContext] = ??? 
-//    Renderer { implicit model =>
-//      SideEffect {
-//        lblCounter.setText(s"${model.uid} ${model.value.toString}")
-//
-//        btnIncrement.setOnAction(() => onAction(Counter.increment))
-//
-//        btnDecrement.setOnAction(() => onAction(Counter.decrement))
+  override lazy val renderer = Renderer { (context, model) =>
+      SideEffect {
+        lblCounter.setText(s"${model.uid} ${model.value.toString}")
+
+        btnIncrement.setOnAction(() => context.call(Counter.increment))
+
+        btnDecrement.setOnAction(() => context.call(Counter.decrement))
 //
 //        btnClose.setOnAction(() => onAction(Counter.close))
-//      }
-//    }
+      }
+    }
   
 }
