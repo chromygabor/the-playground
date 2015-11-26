@@ -1,8 +1,10 @@
 package com.chromy.frpui.fw.core
 
+import com.chromy.frpui.javafxapp.{Result, MyC}
 import monocle._
 
 import scala.concurrent.Future
+import scala.util.Success
 
 /**
  * Created by cry on 2015.10.18..
@@ -15,7 +17,7 @@ case class Targeted(target: Uid, action: Event) extends Event
 trait Action[M] extends Event {
   def uid: Uid
 
-  def apply(context: UpdateContext, model: M): M
+  def apply(context: UpdateContext, model: M): Unit
 }
 
 abstract class Command[M <: BaseModel: Manifest] extends Event {
@@ -95,6 +97,23 @@ object BaseModel {
               child.step(action, previousModel, model)
             }
             action match {
+              case a: MyC[_] if a.isDefinedAt(model) =>
+                val action = a.asInstanceOf[MyC[A]]
+                println(s"Receive MyC: $action")
+                val Result(newModel, nextAction) = action.apply(model, context)
+                println(s"    stepping and returning $model -> $newModel")
+                Future {
+                  println(s"    but in the meanwhile we are computing next action")
+                  nextAction()
+                }.onComplete {
+                  case Success(event) =>
+                    println(s"    publishing event: $event")
+                    context.onAction(event)
+                }
+                newModel
+              case a: MyC[_] =>
+                println(s"MyC: $a -- $model")
+                model
               case a: Command[A] if a.isAcceptable(model) =>
                 val newModel = a.apply(context, model)
                 println(s"Persisting command: $action") 
@@ -121,7 +140,23 @@ object BaseModel {
             }
           case _ =>
             val initialModel: A = action match {
-              
+              case a: MyC[_] if a.isDefinedAt(model) =>
+                val action = a.asInstanceOf[MyC[A]]
+                println(s"Receive MyC: $action -- $model")
+                val Result(newModel, nextAction) = action.apply(model, context)
+                println(s"    stepping and returning $model -> $newModel")
+                Future {
+                  println(s"    but in the meanwhile we are computing next action")
+                  nextAction()
+                }.onComplete {
+                  case Success(event) =>
+                    println(s"    publishing event: $event")
+                    context.onAction(event)
+                }
+                newModel
+              case a: MyC[_] =>
+                println(s"MyC: $a -- $model")
+                model
               case a: Command[A] if a.isAcceptable(model) =>
                 val newModel = a.apply(context, model)
                 println(s"Persisting command: $action")
