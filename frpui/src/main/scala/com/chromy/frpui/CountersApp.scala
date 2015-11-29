@@ -15,7 +15,7 @@ object CountersApp extends App {
   new JFXPanel()
 
   lazy val services = Map[Class[_], ServiceBuilder[_]](
-    classOf[CounterService] -> ServiceBuilder(CounterServiceImpl())
+    classOf[CounterService] -> ServiceBuilder(uid => CounterServiceImpl(uid = Uid(uid)))
   )
 
   val initialState = Counters()
@@ -33,8 +33,20 @@ object CountersApp extends App {
       }
     }
   }
-  app.onNext(AddCounter(Uid("50935")))
-  app.onNext(IncrementCounter(Uid("50935")))
-  app.onNext(IncrementCounter(Uid("50935")))
-  app.onNext(AddCounter(Uid("22038")))
+  app.offerHistory(List(
+    AddCounter(Uid("50935")),
+    IncrementCounter(Uid("50935")),
+    IncrementCounter(Uid("50935")),
+    IncrementCounter(Uid("50935")),
+    IncrementCounter(Uid("50935")),
+    IncrementCounter(Uid("50935")),
+    IncrementCounter(Uid("50935")),
+    IncrementCounter(Uid("50935")),
+    AddCounter(Uid("22038")),
+    IncrementCounter(Uid("22038")),
+    IncrementCounter(Uid("22038")),
+    IncrementCounter(Uid("22038")),
+    IncrementCounter(Uid("50935"))
+  ))
+  
 }

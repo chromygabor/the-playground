@@ -1,10 +1,9 @@
 package com.chromy.frpui.fw.javafx
 
 import java.util.concurrent.atomic.AtomicReference
-
-import com.chromy.frpui.Renderer
-import com.chromy.frpui.RendererChain.RendererChain
+import RendererChain.RendererChain
 import com.chromy.frpui.fw.core._
+import com.chromy.frpui.fw.javafx.Renderer
 
 /**
  * Created by cry on 2015.11.01..
@@ -20,13 +19,6 @@ trait BaseController {
     val r = _initialState.get
     if (r == null) throw new IllegalAccessError("The initialState is accessible only after the init method was called")
     r._1
-  }
-
-  protected def onAction(action: Event)(implicit model: C): Unit = {
-//    action match {
-//      case e: BehaviorAction[_] => context.onAction(e(model.uid))
-//      case e => context.onAction(e)
-//    }
   }
 
   protected def render: RendererChain[C] = {
@@ -67,42 +59,6 @@ trait BaseController {
     }
     override def toString(): String = "Renderer"
   }
-  
-  
-//  protected object Renderer {
-//    def apply(): Renderer[C] = new Renderer[C] {
-//      override def apply(model: C, context: Context): SideEffect = {
-//        _context.set(context)
-//        SideEffect()
-//      }
-//    }
-//
-//    def apply(f: C => SideEffect): Renderer[C] = new Renderer[C] {
-//      override def apply(model: C, context: Context): SideEffect = {
-//        _context.set(context)
-//        f(model)
-//      }
-//      override def toString(): String = "Renderer"
-//    }
-//
-//    def apply(f: (C, C) => SideEffect): Renderer[C] = new Renderer[C] {
-//      val prevValue = new AtomicReference[C](initialState)
-//
-//      override def apply(in: C, context: Context): SideEffect = {
-//        _context.set(context)
-//
-//        if (in != prevValue.get) {
-//          val oldValue = prevValue.get
-//          prevValue.set(in)
-//          f(oldValue, in)
-//        } else {
-//          SideEffect()
-//        }
-//      }
-//      override def toString(): String = "Renderer"
-//    }
-//  }
-
 }
 
 /**

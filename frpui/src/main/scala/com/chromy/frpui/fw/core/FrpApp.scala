@@ -1,10 +1,17 @@
 package com.chromy.frpui.fw.core
 
-import com.chromy.frpui.RendererChain.RendererChain
-import com.chromy.frpui.{Renderer, RendererChain}
+import java.io.{PrintWriter, FileOutputStream, StringWriter}
+
+import com.chromy.frpui.fw.javafx.RendererChain.RendererChain
+import com.chromy.frpui.fw.javafx.{Renderer, RendererChain}
+import com.fasterxml.jackson.annotation.JsonTypeInfo
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.scala.DefaultScalaModule
+import com.fasterxml.jackson.module.scala.experimental.ScalaObjectMapper
+import com.typesafe.scalalogging.LazyLogging
 import monocle.macros.GenLens
 import rx.lang.scala.schedulers.ComputationScheduler
-import rx.lang.scala.{Scheduler, Subject}
+import rx.lang.scala.{Observer, Scheduler, Subject}
 
 /**
  * Created by cry on 2015.10.29..
@@ -22,19 +29,52 @@ object FrpApp {
 //o App
 //oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
 abstract class FrpApp[M](state: M, services: Map[Class[_], ServiceBuilder[_]] = Map.empty, 
-                         updateScheduler: Scheduler = ComputationScheduler()) {
+                         updateScheduler: Scheduler = ComputationScheduler()) extends LazyLogging {
 
   private case object InitServices extends Event 
   
-  protected val aggregatedRoot = Subject[Event]
+  def offerHistory(events: Seq[Event]): Unit = {
+    events.foreach(innerStream.onNext)
+  } 
   
-  val onNext: Event => Unit = { action =>
-    aggregatedRoot.onNext(action)
+  def !(event: Event): Unit = {
+    aggregatedRoot.onNext(event)
   }
+  
+  private val innerStream = Subject[Event]
+  private val aggregatedRoot = Subject[Event]()
 
+
+  val mapper = new ObjectMapper() with ScalaObjectMapper
+  mapper.registerModule(DefaultScalaModule)
+  mapper.enableDefaultTyping(ObjectMapper.DefaultTyping.NON_FINAL, JsonTypeInfo.As.WRAPPER_OBJECT);
+  val eventout = new PrintWriter(new FileOutputStream("events.txt"))
+  
+  val arSubscrtiption = aggregatedRoot.subscribe(new Observer[Event] {
+    override def onNext(event: Event): Unit = {
+      event match {
+        case e: PersistableEvent =>
+          val output = mapper.writeValueAsString(event)
+          eventout.println(output)
+          eventout.flush()
+          
+        case _ =>
+      }
+      innerStream.onNext(event)
+    }
+
+    override def onCompleted(): Unit = {
+      super.onCompleted()
+    }
+
+    override def onError(error: Throwable): Unit = {
+      error.printStackTrace()
+    }
+  })
+  
   protected def updateContext(model: AppModel) = new UpdateContext {
-    def onAction(action: Event): Unit = {
-      FrpApp.this.onNext(action)
+    def !(action: Event): Unit = {
+      aggregatedRoot.onNext(action)
     }
 
     override def getService[B: Manifest]: B = {
@@ -49,7 +89,6 @@ abstract class FrpApp[M](state: M, services: Map[Class[_], ServiceBuilder[_]] = 
       service.api(this).asInstanceOf[B]
     }
 
-    override def publish(event: Event): Unit = ???
   }
 
   
@@ -78,15 +117,17 @@ abstract class FrpApp[M](state: M, services: Map[Class[_], ServiceBuilder[_]] = 
   protected val modelStream = Subject[AppModel]
 
   //Update side
-  private[this] val stream = aggregatedRoot.observeOn(updateScheduler).scan(initialValue) { (model, action) =>
-    println(s"======= Action received: $action")
+  private[this] val stream = innerStream.observeOn(updateScheduler).scan(initialValue) { case (model, action) =>
+    logger.debug(s"======= Action received: $action")
     val context = updateContext(model)
     model.step(action)(context)
   }
   
-  stream.subscribe( {model => modelStream.onNext(model)})
+  stream.subscribe( { model =>
+    modelStream.onNext(model)
+  })
 
-  aggregatedRoot.onNext(InitServices)
+  innerStream.onNext(InitServices)
   
 }
 
@@ -128,7 +169,7 @@ class JavaFxApp[M <: BaseModel](state: M, services: Map[Class[_], ServiceBuilder
     f(context, render, model.app)
   }.observeOn(sideEffectScheduler).subscribe({ _.run() })
 
-  onNext(StartApp)
+  offerHistory(List(StartApp))
 }
 
 object JavaFxApp {

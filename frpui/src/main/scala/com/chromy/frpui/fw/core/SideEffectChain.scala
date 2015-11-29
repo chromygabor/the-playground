@@ -2,7 +2,7 @@ package com.chromy.frpui.fw.core
 
 import java.util.concurrent.atomic.AtomicReference
 
-import com.chromy.frpui.Renderer
+import com.chromy.frpui.fw.javafx.Renderer
 
 import scala.collection.mutable.{Map => MMap, WeakHashMap => WMap}
 

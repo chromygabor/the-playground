@@ -3,7 +3,7 @@ package com.chromy.frpui.fw.javafx
 import javafx.fxml.FXMLLoader
 import javafx.scene.Parent
 
-import com.chromy.frpui.RendererChain.RendererChain
+import RendererChain.RendererChain
 import com.chromy.frpui.fw.core.{RenderContext, SideEffect}
 
 import scala.util.Try

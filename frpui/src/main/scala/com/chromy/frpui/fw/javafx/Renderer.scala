@@ -1,4 +1,4 @@
-package com.chromy.frpui
+package com.chromy.frpui.fw.javafx
 
 import java.util.concurrent.atomic.AtomicReference
 
@@ -54,6 +54,6 @@ object Renderer {
 }
 
 object RendererChain {
-  type RendererChain[T <: BaseModel] = SideEffectChain[T, RenderContext]
-  def apply[T <: BaseModel](): SideEffectChain[T, RenderContext] = new SideEffectChain[T, RenderContext] { }
+  type RendererChain[T] = SideEffectChain[T, RenderContext]
+  def apply[T](): SideEffectChain[T, RenderContext] = new SideEffectChain[T, RenderContext] { }
 }

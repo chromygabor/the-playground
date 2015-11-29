@@ -1,17 +1,14 @@
 package com.chromy.frpui.fw.core
 
-import com.chromy.frpui.Renderer
+import com.chromy.frpui.fw.javafx.Renderer
 
 /**
  * Created by chrogab on 2015.11.18..
  */
 
-//************ FrpApp contexts
-
 trait UpdateContext {
   def getService[B : Manifest]: B
-  def onAction(action: Event): Unit
-  def publish(event: Event): Unit
+  def !(action: Event): Unit
 }
 
 trait RenderContext {
@@ -19,28 +16,13 @@ trait RenderContext {
   def subscribeToService[B <: BaseService: Manifest](renderer: Renderer[B, RenderContext]): Unit
 }
 
-
-//******** Other contexts
-trait BehaviorContext {
-  def getService[B : Manifest]: B
-  def onAction(action: Event): Unit
-}
-
-object BehaviorContext {
-  def apply(context: UpdateContext, uid: Uid): BehaviorContext = new BehaviorContext {
-    override def getService[B: Manifest]: B = context.getService[B]
-
-    override def onAction(action: Event): Unit = ???
-  }
-}
-
 trait ControllerContext[M <: BaseModel] extends RenderContext {
-  def call(f: (UpdateContext, Uid) => Unit): Unit
+  def call(f: M => Action[M]): Unit 
 }
 
 object ControllerContext {
   def apply[M <: BaseModel](context: RenderContext, model: M) : ControllerContext[M] = new ControllerContext[M] {
-    override def call(f: (UpdateContext, Uid) => Unit): Unit = f.apply(updateContext, model.uid)
+    override def call(f: M => Action[M]): Unit = context.updateContext.!(f.apply(model))
 
     override def updateContext: UpdateContext = context.updateContext
 

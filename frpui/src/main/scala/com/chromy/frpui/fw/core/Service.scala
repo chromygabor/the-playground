@@ -25,13 +25,14 @@ trait ServiceBuilder[A <: BaseService] {
 
 object ServiceBuilder {
 
-  def apply[A <: BaseService : Manifest](iInitialValue: A)(implicit ev: Manifest[A#I]): ServiceBuilder[A] = new ServiceBuilder[A] {
+  def apply[A <: BaseService : Manifest](iInitialValue: (String) => A)(implicit ev: Manifest[A#I]): ServiceBuilder[A] = new ServiceBuilder[A] {
     val m = manifest[A#I]
-    override lazy val initialValue: A = iInitialValue
 
     override lazy val key: String = {
       m.runtimeClass.getName
     }
+
+    override lazy val initialValue: A = iInitialValue(key)
 
     override val clazz = m.runtimeClass.asInstanceOf[Class[A#I]]
   }

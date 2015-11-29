@@ -1,10 +1,10 @@
 package com.chromy.frpui.fw.core
 
-import com.chromy.frpui.javafxapp.{Result, MyC}
+import com.typesafe.scalalogging.LazyLogging
 import monocle._
 
 import scala.concurrent.Future
-import scala.util.Success
+import scala.util.{Failure, Success}
 
 /**
  * Created by cry on 2015.10.18..
@@ -14,26 +14,9 @@ case object Init extends Event
 
 case class Targeted(target: Uid, action: Event) extends Event
 
-trait Action[M] extends Event {
-  def uid: Uid
-
-  def apply(context: UpdateContext, model: M): Unit
-}
-
-abstract class Command[M <: BaseModel: Manifest] extends Event {
-  def isAcceptable(m: BaseModel): Boolean = {
-    manifest[M].runtimeClass.isAssignableFrom(m.getClass)
-  }
-
-  def apply(context: UpdateContext, model: M): M
-  def notification(context: UpdateContext, newModel: M): Event
-}
-
-
 trait PostOrderAction
 
 trait PreOrderAction
-
 
 trait Initializable
 
@@ -82,111 +65,73 @@ case class Child[M, B](lens: Lens[M, B]) {
   }
 }
 
-object BaseModel {
-  
-  import scala.concurrent.ExecutionContext.Implicits.global
-  
-  def step[A <: BaseModel](action: Event, model: A, children: List[Child[A, _]], handle: EventHandler[A])(implicit context: UpdateContext): A = {
-    action match {
-      case _ =>
-        val previousModel = model
+object BaseModel extends LazyLogging {
 
-        val newModel = action match {
-          case e: PostOrderAction =>
-            val steppedModel = children.foldLeft(model) { (model, child) =>
-              child.step(action, previousModel, model)
-            }
-            action match {
-              case a: MyC[_] if a.isDefinedAt(model) =>
-                val action = a.asInstanceOf[MyC[A]]
-                println(s"Receive MyC: $action")
-                val Result(newModel, nextAction) = action.apply(model, context)
-                println(s"    stepping and returning $model -> $newModel")
-                Future {
-                  println(s"    but in the meanwhile we are computing next action")
-                  nextAction()
-                }.onComplete {
-                  case Success(event) =>
-                    println(s"    publishing event: $event")
-                    context.onAction(event)
-                }
-                newModel
-              case a: MyC[_] =>
-                println(s"MyC: $a -- $model")
-                model
-              case a: Command[A] if a.isAcceptable(model) =>
-                val newModel = a.apply(context, model)
-                println(s"Persisting command: $action") 
-                println(s"    stepping $model -> $newModel")
-                val actionToPublish = a.notification(context, newModel)
-                println(s"    publishing $actionToPublish")
-                context.onAction(actionToPublish)
-                newModel
-              case _: Command[_] =>
-                model
-              
-              case d: Action[_] if d.uid == model.uid =>
-                val action = d.asInstanceOf[Action[A]]
-                Future {
-                  action.apply(context, model)                  
-                }
-                model
-              case _: Action[_] =>
-                model
-              case _ =>
-                println(s"Stepping $model for $action")
-                val handler = steppedModel.handle.handle
-                if (handler.isDefinedAt(e)) handler.apply(e) else steppedModel.asInstanceOf[A]
-            }
-          case _ =>
-            val initialModel: A = action match {
-              case a: MyC[_] if a.isDefinedAt(model) =>
-                val action = a.asInstanceOf[MyC[A]]
-                println(s"Receive MyC: $action -- $model")
-                val Result(newModel, nextAction) = action.apply(model, context)
-                println(s"    stepping and returning $model -> $newModel")
-                Future {
-                  println(s"    but in the meanwhile we are computing next action")
-                  nextAction()
-                }.onComplete {
-                  case Success(event) =>
-                    println(s"    publishing event: $event")
-                    context.onAction(event)
-                }
-                newModel
-              case a: MyC[_] =>
-                println(s"MyC: $a -- $model")
-                model
-              case a: Command[A] if a.isAcceptable(model) =>
-                val newModel = a.apply(context, model)
-                println(s"Persisting command: $action")
-                println(s"    stepping $model -> $newModel")
-                val actionToPublish = a.notification(context, newModel)
-                println(s"    publishing $actionToPublish")
-                context.onAction(actionToPublish)
-                newModel
-              case _: Command[_] =>
-                model
-                
-              case d: Action[_] if d.uid == model.uid =>
-                val action = d.asInstanceOf[Action[A]]
-                Future {
-                  action.apply(context, model)
-                }
-                model
-              case _: Action[_] =>
-                model
-              case _ =>
-                println(s"Stepping $model for $action")
-                val handler = handle.handle
-                if (handler.isDefinedAt(action)) handler.apply(action) else model.asInstanceOf[A]
-            }
-            children.foldLeft(initialModel) { (model, child) =>
-              child.step(action, previousModel, model)
-            }
+  import scala.concurrent.ExecutionContext.Implicits.global
+
+  def step[A <: BaseModel](action: Event, model: A, children: List[Child[A, _]], handle: EventHandler[A])(implicit context: UpdateContext): A = {
+    val previousModel = model
+
+    val newModel = action match {
+      case e: PostOrderAction =>
+        val steppedModel = children.foldLeft(model) { (model, child) =>
+          child.step(action, previousModel, model)
         }
-        newModel.asInstanceOf[A]
+        action match {
+          case a: Action[_] if a.isDefinedAt(model) =>
+            val action = a.asInstanceOf[Action[A]]
+            logger.debug("s\"Receive Action: $action\"")
+            val Result(newModel, nextAction) = action.apply(model, context)
+            logger.debug(s"    stepping and returning $model -> $newModel")
+            Future {
+              logger.debug(s"    but in the meanwhile we are computing next action")
+              nextAction(newModel, context)
+            }.onComplete {
+              case Success(event) =>
+                logger.debug(s"    publishing event: $event")
+                context.!(event)
+              case Failure(error) =>
+                error.printStackTrace()
+            }
+            newModel
+          case a: Action[_] =>
+            logger.debug(s"Action: $a -- $model")
+            model
+          case _ =>
+            logger.debug(s"Stepping $model for $action")
+            val handler = steppedModel.handle.handle
+            if (handler.isDefinedAt(e)) handler.apply(e) else steppedModel.asInstanceOf[A]
+        }
+      case _ =>
+        val initialModel: A = action match {
+          case a: Action[_] if a.isDefinedAt(model) =>
+            val action = a.asInstanceOf[Action[A]]
+            val Result(newModel, nextAction) = action.apply(model, context)
+            logger.debug(s"    stepping and returning $model -> $newModel")
+            Future {
+              logger.debug(s"    but in the meanwhile we are computing next action")
+              nextAction(newModel, context)
+            }.onComplete {
+              case Success(event) =>
+                logger.debug(s"    publishing event: $event")
+                context.!(event)
+              case Failure(error) =>
+                error.printStackTrace()
+            }
+            newModel
+          case a: Action[_] =>
+            logger.debug(s"Action: $a -- $model")
+            model
+          case _ =>
+            logger.debug(s"Stepping $model for $action")
+            val handler = handle.handle
+            if (handler.isDefinedAt(action)) handler.apply(action) else model.asInstanceOf[A]
+        }
+        children.foldLeft(initialModel) { (model, child) =>
+          child.step(action, previousModel, model)
+        }
     }
+    newModel.asInstanceOf[A]
   }
 }
 
