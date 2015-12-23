@@ -12,18 +12,13 @@ import com.chromy.frpui.fw.javafx.Utils._
  * Created by cry on 2015.10.30..
  */
 
-trait Counter extends Model[Counter] {
-  val value: Int
-}
 
-case class ActiveCounter(value: Int, uid: Uid = Uid()) extends Counter {
+case class Counter(value: Int, uid: Uid = Uid(), enabled: Boolean = true) extends Model[Counter] {
   override def handle(implicit context: UpdateContext): EventHandler[Counter] = EventHandler {
     case CounterChanged(`uid`, value) =>
       copy(value = value)
   }
 }
-
-case class DeletedCounter(value: Int, uid: Uid = Uid()) extends Counter
 
 object Counter extends Behavior[Counter] {
   val increment = action { (model, context) =>
@@ -37,6 +32,13 @@ object Counter extends Behavior[Counter] {
     Result(model) { (_, _) =>
       val service = context.getService[CounterService]
       service.decrement(model.uid)
+    }
+  }
+  
+  val close = action { (model, context) =>
+    Result(model) { (_, _) =>
+      val service = context.getService[CounterService]
+      service.close(model.uid)
     }
   }
 }
@@ -60,7 +62,7 @@ class CounterController extends Controller[Counter] {
 
       btnDecrement.setOnAction(() => context.call(Counter.decrement))
 
-      //btnClose.setOnAction(() => onAction(Counter.close))
+      btnClose.setOnAction(() => context.call(Counter.close))
     }
   }
 
