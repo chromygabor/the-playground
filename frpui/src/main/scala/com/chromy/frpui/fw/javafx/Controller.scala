@@ -4,15 +4,28 @@ import java.util.concurrent.atomic.AtomicReference
 import RendererChain.RendererChain
 import com.chromy.frpui.fw.core._
 import com.chromy.frpui.fw.javafx.Renderer
+import monocle.Lens
 
 /**
  * Created by cry on 2015.11.01..
  */
 
 
+case class ChildController[M <: BaseModel, B <: BaseController](controller: B, getter: M => B#C) {
+  def init(context: RenderContext, render: RendererChain[M], initialState: M): SideEffect = {
+    val childRender = render.map(getter).asInstanceOf[RendererChain[controller.C]]
+    val childState = getter(initialState).asInstanceOf[controller.C]
+    controller.init(context, childRender, childState)
+  }
+}
+
 trait BaseController {
   type C <: BaseModel
 
+  protected lazy val children: List[ChildController[C, _ <: BaseController]] = List.empty
+
+  protected def child[B <: BaseController](controller: B)(getter: C => B#C) = ChildController[C, B](controller, getter)
+  
   private[this] val _initialState = new AtomicReference[(C, RendererChain[C])]()
 
   protected def initialState: C = {
@@ -26,7 +39,7 @@ trait BaseController {
     if (r == null) throw new IllegalAccessError("The initialState is accessible only after the init method was called")
     r._2
   }
-
+  
   protected val renderer: Renderer[C, RenderContext]
 
   def init(context: RenderContext, render: RendererChain[C], initialState: C): SideEffect = {
@@ -34,7 +47,11 @@ trait BaseController {
     _initialState.set((initialState, distinctRender))
     distinctRender.subscribe(renderer)
 
-    render.update(render.lastItem.getOrElse(initialState), context)
+    val se = render.update(render.lastItem.getOrElse(initialState), context)
+    
+    children.foldLeft(se) { case (se, child) =>
+      se ++ child.init(context, distinctRender, initialState)
+    }
   }
 
   def Renderer(f: (ControllerContext[C], C) => SideEffect): Renderer[C, RenderContext] = new Renderer[C, RenderContext] {
