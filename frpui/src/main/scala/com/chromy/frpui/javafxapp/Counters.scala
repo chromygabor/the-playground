@@ -6,8 +6,9 @@ import javafx.scene.layout.FlowPane
 
 import com.chromy.frpui.fw.core._
 import com.chromy.frpui.fw.javafx.Utils._
-import com.chromy.frpui.fw.javafx.{Controller, JavaFX}
+import com.chromy.frpui.fw.javafx.{ChildController, BaseController, Controller, JavaFX}
 import com.chromy.frpui.fw.util.DiffUtils._
+import monocle._
 import monocle.macros.GenLens
 
 import scala.util.{Failure, Success}
@@ -15,14 +16,19 @@ import scala.util.{Failure, Success}
 /**
  * Created by cry on 2015.10.30..
  */
-case class Counters(val uid: Uid = Uid(), counters: List[Counter] = Nil) extends Model[Counters] {
-  override val children = List(Child(GenLens[Counters](_.counters)))
+case class Counters(val uid: Uid = Uid(), counters: List[Counter] = Nil, counterNavigator: CounterNavigator = CounterNavigator()) extends Model[Counters] {
+  override val children = List(
+    Child(GenLens[Counters](_.counters)),
+    Child(GenLens[Counters](_.counterNavigator))
+  )
 
   override def handle(implicit context: UpdateContext): EventHandler[Counters] = EventHandler {
     case Init => 
       this
     case CounterAdded(counterUid, value) =>
-      copy(counters = ActiveCounter(value = value, uid = counterUid) :: counters)
+      copy(counters = Counter(value = value, uid = counterUid) :: counters)
+    case CounterRemoved(counterUid) =>
+      copy(counters = counters.filterNot(_.uid == counterUid))
   }
 }
 
@@ -45,9 +51,13 @@ class CountersController extends Controller[Counters] {
   @FXML private var _pCounters: FlowPane = _
   lazy val pCounters = _pCounters
 
-  //  @FXML private var _counterNavigatorController: CounterNavigatorController = _
-  //  lazy val counterNavigator = _counterNavigatorController
+  @FXML private var _counterNavigatorController: CounterNavigatorController = _
+  lazy val counterNavigator = _counterNavigatorController
 
+  override lazy val children = List(
+    child(counterNavigator){_.counterNavigator}
+  )
+  
   private lazy val subrenderer = render.map { model =>
     model.counters.map { item =>
       item.uid -> item
@@ -56,11 +66,9 @@ class CountersController extends Controller[Counters] {
   
   override lazy val renderer = Renderer { (context, model) =>
       SideEffect {
-        //bAdd.setOnAction(() => context.call(Counters.addCounter))
         bAdd.setOnAction(() => context.call(Counters.addCounterClicked))
       }
     } ++ Renderer { (context, prevModel, model) =>
-      //println(s"Subscriber get called: $prevModel -> $model")
       val lcounters = prevModel.counters.diffOps(model.counters)(_.uid)
       val counters = lcounters.map {
         case Insert(pos, item) =>
