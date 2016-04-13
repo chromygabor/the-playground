@@ -65,59 +65,6 @@ object Product {
 
 }
 
-trait Validation[+F, +S] {
-  def flatMap[FB >: F, SB >: S](f: Seq[S] => Validation[FB, SB]): Validation[FB, SB] = this match {
-    case SuccessfulValidation(events) => f(events) match {
-        case SuccessfulValidation(newEvents) => SuccessfulValidation(events ++ newEvents)
-        case e@FailedValidation(_) => e
-    }
-    case e@FailedValidation(_) => e
-  }
-
-  def map[SB >: S](f: Seq[S] => Seq[SB]): Validation[F, SB] = this match {
-    case SuccessfulValidation(events) =>  
-      SuccessfulValidation(f(events))
-    case e@FailedValidation(_) => e
-  }
-  
-  def isFailed = !isSuccess
-  def isSuccess = this match {
-    case SuccessfulValidation(_) => true
-    case FailedValidation(_) => false
-  }
-  
-}
-case class SuccessfulValidation[S](events: Seq[S]) extends Validation[Nothing, S]
-case class FailedValidation[F](failure: F) extends Validation[F, Nothing]
-
-class ValidationTest {
-  val validation1: DomainValidation = for {
-    _ <- SuccessfulValidation(Seq(ValueAdded(10)))
-    _ <- FailedValidation(Error("Some error"))
-    v3 <- SuccessfulValidation(Seq(ValueAdded(30)))
-  } yield {
-      v3
-    }
-
-  assert(validation1 == FailedValidation(Error("Some error")))
-
-  val validation2: DomainValidation = for {
-    _ <- SuccessfulValidation(Seq(ValueAdded(10)))
-    _ <- SuccessfulValidation(Seq(ValueAdded(20)))
-    v3 <- SuccessfulValidation(Seq(ValueAdded(30)))
-  } yield {
-      v3
-    }
-
-  assert(validation2 == SuccessfulValidation(Seq(
-    ValueAdded(10),
-    ValueAdded(20),
-    ValueAdded(30)
-  )
-  ))
-  
-}
-
 case class Child(value: Int)
 case class AppModel(children: Seq[Child])
 
