@@ -26,5 +26,5 @@ sealed trait Validation[+F, +S] {
   
 }
 
-case class SuccessfulValidation[S](events: Seq[S]) extends Validation[Nothing, S]
-case class FailedValidation[F](failure: F) extends Validation[F, Nothing]
+case class SuccessfulValidation[+S](events: Seq[S]) extends Validation[Nothing, S]
+case class FailedValidation[+F](failure: F) extends Validation[F, Nothing]
