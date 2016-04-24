@@ -24,6 +24,10 @@ sealed trait Validation[+F, +S] {
     case FailedValidation(_) => false
   }
   
+  def foreach(f: Seq[S] => Unit): Unit = this match {
+    case SuccessfulValidation(events) => f(events)
+    case e@FailedValidation(_) => 
+  }
 }
 
 case class SuccessfulValidation[+S](events: Seq[S]) extends Validation[Nothing, S]
