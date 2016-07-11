@@ -1,0 +1,5 @@
+dependencies {
+        compile 'com.typesafe.akka:akka-actor_2.11:2.4.7'
+        compile 'com.typesafe.akka:akka-distributed-data-experimental_2.11:2.4.7'
+}
+

@@ -10,7 +10,6 @@ repositories {
 
 dependencies {
     compile 'org.scala-lang:scala-library:2.11.6'
-    compile 'org.scala-lang:scala-reflect:2.11.6'
 }
 
 allprojects {
@@ -23,8 +22,9 @@ allprojects {
 }
  
 subprojects {
- 
+
     apply plugin: 'scala'
+    apply plugin: 'idea'
 
     sourceCompatibility = langLevel
     targetCompatibility = langLevel
@@ -39,49 +39,7 @@ subprojects {
         compile 'org.scala-lang:scala-reflect:2.11.6'
     }
 }
- 
-project(':metro') {
- 
-    dependencies {
-        compile 'com.typesafe.akka:akka-actor_2.11:2.3.9'
-    }
-}
 
-project(':sandbox') {
- 
-    dependencies {
-        compile 'org.scalatest:scalatest_2.11:2.2.4'
-        compile 'io.reactivex:rxscala_2.11:0.24.0'
-        compile 'com.github.julien-truffaut:monocle-macro_2.11:1.1.1'
-    }
-}
- 
-project(':binarytree') {
- 
-    dependencies {
-    }
-}
-
-project(':reactiveui') {
-    dependencies {
-        compile 'io.reactivex:rxscala_2.11:0.24.0'
-        compile 'org.scalatest:scalatest_2.11:2.2.4'
-        compile 'com.github.julien-truffaut:monocle-core_2.11:1.1.1'
-        compile 'com.github.julien-truffaut:monocle-macro_2.11:1.1.1'
-    }
-}
-project(':frpui') {
-    dependencies {
-        compile 'io.reactivex:rxscala_2.11:0.24.0'
-        compile 'org.scalatest:scalatest_2.11:2.2.4'
-        compile 'com.github.julien-truffaut:monocle-core_2.11:1.1.1'
-        compile 'com.github.julien-truffaut:monocle-macro_2.11:1.1.1'
-        compile 'com.fasterxml.jackson.module:jackson-module-scala_2.11:2.4.0'
-        compile 'com.fasterxml.jackson.core:jackson-databind:2.4.0'
-        compile 'com.typesafe.scala-logging:scala-logging_2.11:3.1.0'
-        compile 'ch.qos.logback:logback-classic:1.0.9'
-    }
-}
 
 idea {
     project {
