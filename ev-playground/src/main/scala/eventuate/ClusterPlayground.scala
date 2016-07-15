@@ -1,8 +1,13 @@
 package eventuate
 
-import akka.actor._
+import akka.actor.{ActorSystem, _}
 import akka.cluster.ClusterEvent._
 import akka.cluster.{Cluster, Member}
+import akka.http.scaladsl.Http
+import akka.http.scaladsl.model._
+import akka.http.scaladsl.server.Directives._
+import akka.http.scaladsl.server.Route
+import akka.stream.ActorMaterializer
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
 
@@ -13,6 +18,15 @@ import scala.concurrent.duration._
  * Created by chrogab on 2016.07.14..
  */
 object ClusterPlayground {
+
+
+  val route: Route =
+    get {
+      pathPrefix("lock" / Segment / LongNumber ) { (aggregate, id) =>
+        complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, "<h1>Say hello to akka-http</h1>"))
+      }
+    }
+  
   def main(args: Array[String]): Unit = {
     if (args.isEmpty)
       startup(Seq("2551", "2552", "0"))
@@ -27,7 +41,14 @@ object ClusterPlayground {
         withFallback(ConfigFactory.load())
 
       // Create an Akka system
-      val system = ActorSystem("ClusterSystem", config)
+      implicit val system = ActorSystem("ClusterSystem", config)
+      implicit val materializer = ActorMaterializer()
+      implicit val ec = system.dispatcher
+
+      Http().bindAndHandle(route, "localhost", port.toInt + 5530)
+        .foreach { http =>
+          println(s"Server is up on: ${http.localAddress}")
+        }
       // Create an actor that handles cluster domain events
       system.actorOf(Props[SimpleClusterListener], name = "clusterListener")
     }
