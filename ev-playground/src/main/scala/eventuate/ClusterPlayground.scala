@@ -1,5 +1,6 @@
 package eventuate
 
+import akka.actor.Status.Success
 import akka.actor.{ActorSystem, _}
 import akka.cluster.ClusterEvent._
 import akka.cluster.{Cluster, Member}
@@ -10,23 +11,45 @@ import akka.http.scaladsl.server.Route
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
+import akka.pattern._
 
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 
 /**
- * Created by chrogab on 2016.07.14..
- */
+  * Created by chrogab on 2016.07.14..
+  */
+trait LockResult {
+  def aggregate: String
+
+  def id: Long
+}
+
+case class Lock(aggregate: String, id: Long)
+
+case class LockGranted(aggregate: String, id: Long) extends LockResult
+
+case class LockNotGranted(aggregate: String, id: Long) extends LockResult
+
 object ClusterPlayground {
 
 
-  val route: Route =
+  def route(clusterLock: ActorRef)(implicit ec: ExecutionContext): Route = {
+    implicit val timeout = Timeout(5.seconds)
     get {
-      pathPrefix("lock" / Segment / LongNumber ) { (aggregate, id) =>
-        complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, "<h1>Say hello to akka-http</h1>"))
+      pathPrefix("lock" / Segment / LongNumber) { (aggregate, id) =>
+        val r = clusterLock ? Lock(aggregate, id)
+
+        onSuccess(r) {
+          case LockGranted(_, _) =>
+            complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, s"<h1>Lock granted for $aggregate: $id</h1>"))
+          case LockNotGranted(_, _) =>
+            complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, s"<h1>Lock is not granted for: $aggregate: $id</h1>"))
+        }
       }
     }
-  
+  }
+
   def main(args: Array[String]): Unit = {
     if (args.isEmpty)
       startup(Seq("2551", "2552", "0"))
@@ -45,12 +68,12 @@ object ClusterPlayground {
       implicit val materializer = ActorMaterializer()
       implicit val ec = system.dispatcher
 
-      Http().bindAndHandle(route, "localhost", port.toInt + 5530)
+      // Create an actor that handles cluster domain events
+      val clusterLock = system.actorOf(Props[ClusterBroadcast], name = "clusterListener")
+      Http().bindAndHandle(route(clusterLock), "localhost", port.toInt + 5530)
         .foreach { http =>
           println(s"Server is up on: ${http.localAddress}")
         }
-      // Create an actor that handles cluster domain events
-      system.actorOf(Props[SimpleClusterListener], name = "clusterListener")
     }
   }
 }
@@ -68,10 +91,18 @@ case object SiteTick
 
 case class StampedEvent(timestamp: Long, event: Any)
 
+case class LockRequest(aggregate: String, id: Long)
+
+case class LockResponse(request: LockRequest, member: Site)
+
+case class LockStatus(aggregate: String, id: Long, replies: Seq[LockResponse] = Nil) {
+  def +(response: LockResponse) = copy(replies = replies :+ response)
+}
+
 /**
- * Actor
- */
-class SimpleClusterListener extends Actor with ActorLogging {
+  * Actor
+  */
+class ClusterBroadcast extends Actor with ActorLogging {
 
   case object Tick
 
@@ -79,6 +110,7 @@ class SimpleClusterListener extends Actor with ActorLogging {
 
   private var sites = Set.empty[Site]
   implicit private var clock: Clock = Clock(0)
+  private var locks: Map[(String, Long), LockStatus] = Map.empty
 
   implicit val ec = context.dispatcher
 
@@ -89,10 +121,11 @@ class SimpleClusterListener extends Actor with ActorLogging {
   override def postStop(): Unit = cluster.unsubscribe(self)
 
   /**
-   * Return an actorRef for a member's same actor
-   * @param member
-   * @return
-   */
+    * Return an actorRef for a member's same actor
+    *
+    * @param member
+    * @return
+    */
   def actorRefForMember(member: Member): Future[ActorRef] = {
     val pathWithoutAddress = self.path.toStringWithoutAddress.split("/")
     val newActorPath = pathWithoutAddress.foldLeft(RootActorPath(member.address): ActorPath) { (path, part) =>
@@ -110,13 +143,28 @@ class SimpleClusterListener extends Actor with ActorLogging {
 
   val tickTask = context.system.scheduler.schedule(5.seconds, 5.seconds, self, Tick)
 
+  def sendToSites(event: Any): Unit = {
+    sites.foreach { site =>
+      site.ref ! stamp(event)
+    }
+
+  }
+
   def receive = {
     // Sending out tick to sites
-    case Tick =>
-      sites.foreach { site =>
-        site.ref ! stamp(SiteTick)
-      }
 
+    //    case Lock(aggregate, id) =>
+    //      locks = locks.updated((aggregate, id), LockStatus(aggregate, id))
+    //
+    //      sendToSites(LockRequest(aggregate, id))
+    //      sender() ! LockNotGranted(aggregate, id)
+
+    //    case e@LockResponse(LockRequest(aggregate, id), _) =>
+    //      val newStatus = locks((aggregate, id)) + e
+    //      locks = locks.updated((aggregate, id), newStatus)
+
+    case Tick =>
+      sendToSites(SiteTick)
     case SiteTick =>
 
     case StampedEvent(departedTime, event) =>
@@ -124,24 +172,24 @@ class SimpleClusterListener extends Actor with ActorLogging {
       clock = clock.next
       if (departedTime > clock.counter) {
         clock = Clock(departedTime + 1)
-        log.info(s"Modifying clock to $clock")
+        log.debug(s"Modifying clock to $clock")
       } else {
-        log.info(s"Clock is $clock")
+        log.debug(s"Clock is $clock")
       }
       self ! event
 
     case MemberUp(member) if member.address != cluster.selfAddress =>
-      log.info("Member is Up: {}", member.address)
+      log.debug("Member is Up: {}", member.address)
       actorRefForMember(member).foreach { memberRef =>
         sites = sites + Site(member, memberRef)
       }
     case UnreachableMember(member) if member.address != cluster.selfAddress =>
-      log.info("Member detected as unreachable: {}", member)
+      log.debug("Member detected as unreachable: {}", member)
       sites = sites.collect {
         case e@Site(m, _) if member != m => e
       }
     case MemberRemoved(member, previousStatus) if member.address != cluster.selfAddress =>
-      log.info("Member is Removed: {} after {}", member.address, previousStatus)
+      log.debug("Member is Removed: {} after {}", member.address, previousStatus)
       sites = sites.collect {
         case e@Site(m, _) if member != m => e
       }
