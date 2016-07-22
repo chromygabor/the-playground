@@ -1,6 +1,10 @@
 dependencies {
         compile 'com.typesafe.akka:akka-actor_2.11:2.4.7'
         compile 'com.typesafe.akka:akka-distributed-data-experimental_2.11:2.4.7'
+        compile 'com.typesafe.akka:akka-persistence_2.11:2.4.7'
         compile 'com.typesafe.akka:akka-http-experimental_2.11:2.4.7'
+        compile 'com.typesafe.akka:akka-persistence-query-experimental_2.11:2.4.7'
+        compile 'org.iq80.leveldb:leveldb:0.7'
+        compile 'org.fusesource.leveldbjni:leveldbjni-all:1.8'
 }
 
