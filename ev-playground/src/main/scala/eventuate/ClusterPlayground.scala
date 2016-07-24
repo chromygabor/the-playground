@@ -97,7 +97,6 @@ object ClusterBroadcast {
         Right(sender)
       }
     }
-
   }
 
   object EventConfirmations {
