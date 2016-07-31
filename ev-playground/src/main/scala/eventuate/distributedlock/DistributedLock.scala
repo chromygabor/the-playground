@@ -1,4 +1,4 @@
-package eventuate
+package eventuate.distributedlock
 
 import java.util.UUID
 
@@ -8,6 +8,8 @@ import akka.cluster.{Cluster, Member}
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
+import eventuate.{ClusterUtils, Site, TestMessage}
+import eventuate.cluster.{ConfirmStampedEvent, Sent, StampedEvent, Tick}
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future, Promise}
@@ -39,23 +41,30 @@ object DistributedLockPlayground extends App {
 //    println("Finished critical section: 1")
 //  }
 
+  val lr0 = DistributedLock(cluster, "user-1")
   val lr1 = DistributedLock(cluster, "user-1")
-//  val lr2 = DistributedLock(cluster, "user-2")
-//  
-//  for {
-//    l1 <- lr1.waitFor
-//    l2 <- lr2.waitFor
-//  } yield {
-//    println("it acquired all the locks")
-//    l1.release()
-//    l2.release()
-//  }
-//  
-//  lr1.foreach {
-//    case e: Available => println("lr1 is available")
-//    case e: Unavailable => println("lr1 is unavailable")
-//  }
-//  
+  val lr2 = DistributedLock(cluster, "user-2")
+
+  lr0.foreach {
+    case e: Available =>
+      println("lr0 is available, locking")
+      Thread.sleep(1000)
+      e.release()
+      println("lr0 released")
+    case e: Unavailable => println("lr0 is unavailable")
+  }
+
+  for {
+    l1 <- lr1.waitFor
+    l2 <- lr2.waitFor
+  } yield {
+    println("it acquired all the locks")
+    l1.release()
+    l2.release()
+  }
+
+  println("***************** End of main")
+
   
   //val f = distributedLock ! LockMessage("user-1")
   
@@ -79,50 +88,46 @@ object DistributedLockPlayground extends App {
 }
 
 trait LockAvailability
-case class Available() extends LockAvailability {
-  def release(): Unit = ???
-}
+class Available(val release: () => Unit) extends LockAvailability
 case class Unavailable() extends LockAvailability
 object DistributedLock {
   
   private[this] var clusters = Map.empty[Cluster, ActorRef]
 
   def apply(cluster: Cluster, aggregateId: String)(implicit actorRefFactory: ActorRefFactory): DistributedLock = {
-    val lm = LockMessage(aggregateId)
-    val dl = new DistributedLock(cluster, s"${aggregateId}")
-    getOrCreate(cluster) !(lm, dl.senderActor)
+    val clusterLockActor = getOrCreate(cluster)
+    val dl = new DistributedLock(clusterLockActor, s"$aggregateId")
+    implicit val sender = dl.senderActor
+    clusterLockActor ! LockRequest(aggregateId)
     dl
   }
-  
+
   private[this] def getOrCreate(cluster: Cluster)(implicit actorRefFactory: ActorRefFactory): ActorRef = {
     clusters.get(cluster) match {
       case Some(ref) => ref
       case None =>
         val newClusterLock = actorRefFactory.actorOf(Props(new DistributedLockActor(cluster)), s"DistributedLock-Cluster")
         clusters = clusters + (cluster -> newClusterLock)
-        newClusterLock ! TestMessage("10")
         newClusterLock
     }
   }
-  
+
 }
 
 /**
  * Distributed lock
- * @param cluster
- * @param lockId
  */
-class DistributedLock private (cluster: Cluster, lockId: String)(implicit val actorRefFactory: ActorRefFactory) {
+class DistributedLock private (clusterLockActor: ActorRef, lockId: String)(implicit val actorRefFactory: ActorRefFactory) {
   private[this] val immediateLockResponse = Promise[LockAvailability]
   private[this] val lockAvailable = Promise[Available]
 
   val senderActor = actorRefFactory.actorOf(Props(new Actor with ActorLogging {
     override def receive: Actor.Receive = {
-      case LockGranted => 
+      case LockGranted(uid) =>
         log.debug(s"LockGranted $lockId")
-        val available = Available()
+        val available = new Available({ () => clusterLockActor ! LockReleaseRequest(lockId, uid) })
         if(!immediateLockResponse.isCompleted) {
-          log.debug(s"immediateResponse is not completed yet for $lockId")
+          log.debug(s"Complete immediateLockResponse for $lockId")
           immediateLockResponse.success(available)
         }
         log.debug(s"Complete lockAvailable for $lockId")
@@ -131,24 +136,29 @@ class DistributedLock private (cluster: Cluster, lockId: String)(implicit val ac
         log.debug(s"LockRejected for $lockId")
         log.debug(s"Complete immediateResponse for $lockId")
         immediateLockResponse.success(Unavailable())
-        
+
       case e =>
         log.error(s"Unknown message type received: $e for $lockId")
         immediateLockResponse.failure(new IllegalStateException(s"Unknown message type received: $e"))
     }
-  }))
-  
+  }),s"DistributedLock-Listener-$lockId-${UUID.randomUUID().toString.take(6)}")
+
   def waitFor: Future[Available] = lockAvailable.future
   def foreach(f: PartialFunction[LockAvailability, Unit])(implicit ec: ExecutionContext) = immediateLockResponse.future.foreach(f)
-  
+
 }
+
+case class LockRequest(aggregateId: String)
+case class LockReleaseRequest(aggregateId: String, uid: String)
+
+case class LockGranted(uid: String)
+case object LockRejected
 
 /** ******************************************************
   * DistributedLock
   * *******************************************************/
 object DistributedLockActor {
-  
-  case class Site(member: Member, ref: ActorRef, isSelf: Boolean, isLeader: Boolean, uid: String = UUID.randomUUID().toString)
+
 
   case class Clock(counter: Long) {
     val currentTime = System.currentTimeMillis()
@@ -178,12 +188,6 @@ object DistributedLockActor {
 
 }
 
-case class LockMessage(aggregateId: String)
-case class LockReleaseRequest(aggregateId: String, uid: String)
-
-case object LockGranted
-case object LockRejected 
-
 /** ************************************************
   * DistributedLock
   */
@@ -205,26 +209,10 @@ class DistributedLockActor(cluster: Cluster) extends Actor with Stash with Actor
   override def postStop(): Unit = cluster.unsubscribe(self)
 
   /**
-   * Return an actorRef for a member's same actor
-   *
-   * @param member
-   * @return
-   */
-  private[this] def actorRefForMember(member: Member): Future[ActorRef] = {
-    val pathWithoutAddress = self.path.toStringWithoutAddress.split("/")
-    val newActorPath = pathWithoutAddress.foldLeft(RootActorPath(member.address): ActorPath) { (path, part) =>
-      path / part
-    }
-    implicit val resolveTimeout = Timeout(5.seconds)
-
-    context.actorSelection(newActorPath).resolveOne()
-  }
-
-  /**
-   *
-   * @param event
-   * @param eventSender
-   */
+    *
+    * @param event
+    * @param eventSender
+    */
   private[this] def sendEventToSites(event: Any, eventSender: ActorRef): Unit = {
     clock = clock.next
     val uid = UUID.randomUUID().toString
@@ -262,30 +250,30 @@ class DistributedLockActor(cluster: Cluster) extends Actor with Stash with Actor
   var locks = Map.empty[String, Vector[RequestedLock]]
 
   case class Become(sites: Set[Site], isSelfMemberUp: Boolean, leader: Option[Site])
-  
+
   def myReceive(sites: Set[Site], isSelfMemberUp: Boolean, leader: Option[Site]): Receive = {
     /**
-     * Become
-     */
+      * Become
+      */
     case become@Become(sites, isSelfMemberUp, leader) =>
       log.debug(s"Becoming: $become")
       unstashAll()
       context.become(myReceive(sites, isSelfMemberUp, leader))
 
     /**
-     * MemberUp
-     */
+      * MemberUp
+      */
     case MemberUp(member) =>
       log.debug("Member is Up: {}", member.address)
-      actorRefForMember(member).foreach { memberRef =>
+      ClusterUtils.searchActorInMember(self, member).foreach { memberRef =>
         val newSites = sites + Site(member = member, ref = memberRef, isSelf = false, isLeader = false)
         val isOurMemberUp = member.address == cluster.selfAddress
         self ! Become(sites = newSites, isSelfMemberUp = isOurMemberUp, leader = leader)
       }
 
     /**
-     * UnreachableMember
-     */
+      * UnreachableMember
+      */
     case UnreachableMember(member) if member.address != cluster.selfAddress =>
       log.debug("Member detected as unreachable: {}", member)
       val newSites = sites.filterNot(_.member != member)
@@ -293,8 +281,8 @@ class DistributedLockActor(cluster: Cluster) extends Actor with Stash with Actor
       self ! Become(sites = newSites, isSelfMemberUp = isOurMemberUp, leader = leader)
 
     /**
-     * MemberRemoved
-     */
+      * MemberRemoved
+      */
     case MemberRemoved(member, previousStatus) if member.address != cluster.selfAddress =>
       log.debug("Member is Removed: {} after {}", member.address, previousStatus)
       val newSites = sites.filterNot(_.member != member)
@@ -302,8 +290,8 @@ class DistributedLockActor(cluster: Cluster) extends Actor with Stash with Actor
       self ! Become(sites = newSites, isSelfMemberUp = isOurMemberUp, leader = leader)
 
     /**
-     * LeaderChanged
-     */
+      * LeaderChanged
+      */
     case LeaderChanged(Some(leaderAddress)) if isSelfMemberUp =>
       //      tickTask = context.system.scheduler.schedule(5.seconds, 5.seconds, self, Tick)
 
@@ -314,8 +302,8 @@ class DistributedLockActor(cluster: Cluster) extends Actor with Stash with Actor
       }
 
     /**
-     * LeaderChanged
-     */
+      * LeaderChanged
+      */
     case LeaderChanged(None) if isSelfMemberUp =>
       log.debug(s"There is no leader")
       sites.find(_.isLeader).foreach { site =>
@@ -324,38 +312,38 @@ class DistributedLockActor(cluster: Cluster) extends Actor with Stash with Actor
       }
 
     /**
-     * Event if there is no selfMemberUp or leader
-     */
+      * Event if there is no selfMemberUp or leader
+      */
     case event if !isSelfMemberUp || leader.isEmpty =>
       log.debug(s"Stashing event: $event")
       stash()
 
     /**
-     * Lock if leader is self
-     */
-    case lock@LockMessage(aggregateId) if leader.exists(_.member.address == cluster.selfAddress) =>
+      * Lock if leader is self
+      */
+    case lock@LockRequest(aggregateId) if leader.exists(_.member.address == cluster.selfAddress) =>
       log.debug(s"Lock requested for $aggregateId")
       val lockRequest = RequestedLock(sender())
       locks = locks.updated(aggregateId, locks.getOrElse(aggregateId, Vector.empty) :+ lockRequest)
 
       if (locks(aggregateId).head == lockRequest) {
-        lockRequest.sender ! LockGranted
+        lockRequest.sender ! LockGranted(lockRequest.uid)
       } else {
         lockRequest.sender ! LockRejected
       }
 
     /**
-     * Forwarding lock to the leader
-     */
-    case lock: LockMessage =>
+      * Forwarding lock to the leader
+      */
+    case lock: LockRequest =>
       log.debug(s"Forwarding $lock to leader")
-      leader.foreach{ leaderSite => 
+      leader.foreach{ leaderSite =>
         leaderSite.ref ! lock
       }
 
     /**
-     * Release a lock
-     */
+      * Release a lock
+      */
     case LockReleaseRequest(aggregateId, uid) if leader.exists(_.member.address == cluster.selfAddress) =>
       log.debug(s"LockRelease requested for $aggregateId")
       locks = locks.updated(aggregateId, locks(aggregateId).filter(_.uid != uid))
@@ -365,11 +353,11 @@ class DistributedLockActor(cluster: Cluster) extends Actor with Stash with Actor
 
       locks.get(aggregateId)
         .foreach(_.headOption
-          .foreach(lockRequest => lockRequest.sender ! LockGranted))
+          .foreach(lockRequest => lockRequest.sender ! LockGranted(lockRequest.uid)))
 
     /**
-     * Forwarding lockRelease to the leader
-     */
+      * Forwarding lockRelease to the leader
+      */
     case lockRelease: LockReleaseRequest if !leader.exists(_.member.address == cluster.selfAddress) =>
       log.debug(s"Forwarding $lockRelease to leader")
       leader.foreach{ leaderSite =>
@@ -377,16 +365,16 @@ class DistributedLockActor(cluster: Cluster) extends Actor with Stash with Actor
       }
 
     /**
-     * TestMessage
-     */
+      * TestMessage
+      */
     case TestMessage(message) =>
       val isLeader = leader.exists(_.member.address == cluster.selfAddress)
       println(s"Message has received: $message, $isLeader")
   }
-  
+
   /**
-   * No leader function
-   */
+    * No leader function
+    */
   def noLeader: Receive = {
     // Got a message from other node's ClusterBroadcast actor
     case StampedEvent(departedTime, event, uid, site) =>
@@ -420,9 +408,10 @@ class DistributedLockActor(cluster: Cluster) extends Actor with Stash with Actor
   }
 
   /**
-   *
-   * @return
-   */
+    *
+    * @return
+    */
   override val receive = myReceive(Set(), false, None)
 
 }
+

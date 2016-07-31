@@ -1,10 +1,10 @@
-package eventuate
+package eventuate.persistence
 
 import akka.NotUsed
-import akka.actor.{Props, ActorSystem}
-import akka.persistence.query.{EventEnvelope, PersistenceQuery}
+import akka.actor.{ActorSystem, Props}
+import akka.persistence.query.PersistenceQuery
 import akka.persistence.query.journal.leveldb.scaladsl.LeveldbReadJournal
-import akka.persistence.{SnapshotOffer, PersistentActor}
+import akka.persistence.{PersistentActor, SnapshotOffer}
 import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Source
 import com.typesafe.config.ConfigFactory

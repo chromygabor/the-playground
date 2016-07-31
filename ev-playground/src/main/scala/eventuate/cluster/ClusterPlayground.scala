@@ -1,8 +1,7 @@
-package eventuate
+package eventuate.cluster
 
 import java.util.UUID
 
-import akka.actor.Actor.Receive
 import akka.actor.{ActorSystem, _}
 import akka.cluster.ClusterEvent._
 import akka.cluster.{Cluster, Member}
@@ -15,15 +14,11 @@ import akka.persistence.PersistentActor
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
+import eventuate.{Site, TestMessage}
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 
-/**
- * Created by chrogab on 2016.07.14..
- */
-
-case class TestMessage(e: String)
 
 object ClusterPlayground {
   def route(clusterBroadcast: ActorRef)(implicit ec: ExecutionContext): Route = {
@@ -77,7 +72,6 @@ case object Sent
 case object Tick
 
 object ClusterBroadcast {
-  case class Site(member: Member, ref: ActorRef, uid: String = UUID.randomUUID().toString)
 
   case class Clock(counter: Long) {
     val currentTime = System.currentTimeMillis()
@@ -91,7 +85,7 @@ object ClusterBroadcast {
     def confirm(site: Site): Either[EventConfirmations, ActorRef] = {
       val newConfirmedSites = confirmedSites.updated(site, true)
 
-      if(newConfirmedSites.exists(!_._2)) {
+      if (newConfirmedSites.exists(!_._2)) {
         Left(copy(confirmedSites = newConfirmedSites))
       } else {
         Right(sender)
@@ -104,13 +98,16 @@ object ClusterBroadcast {
       new EventConfirmations(confirmedSites = sites.map(_ -> false).toMap, sender = sender)
     }
   }
+
 }
 
 /**
- * Actor
- */
+  * Actor
+  */
 class ClusterBroadcast extends PersistentActor with ActorLogging {
+
   import ClusterBroadcast._
+
   private[this] val cluster = Cluster(context.system)
   private[this] var sites = Set.empty[Site]
   private[this] implicit var clock: Clock = Clock(0)
@@ -119,7 +116,7 @@ class ClusterBroadcast extends PersistentActor with ActorLogging {
   private[this] var confirmations: Map[String, EventConfirmations] = Map.empty
 
   case object Init
-  
+
   override def preStart(): Unit = {
     cluster.subscribe(self, initialStateMode = InitialStateAsEvents, classOf[MemberEvent], classOf[UnreachableMember])
   }
@@ -127,11 +124,11 @@ class ClusterBroadcast extends PersistentActor with ActorLogging {
   override def postStop(): Unit = cluster.unsubscribe(self)
 
   /**
-   * Return an actorRef for a member's same actor
-   *
-   * @param member
-   * @return
-   */
+    * Return an actorRef for a member's same actor
+    *
+    * @param member
+    * @return
+    */
   private[this] def actorRefForMember(member: Member): Future[ActorRef] = {
     val pathWithoutAddress = self.path.toStringWithoutAddress.split("/")
     val newActorPath = pathWithoutAddress.foldLeft(RootActorPath(member.address): ActorPath) { (path, part) =>
@@ -142,10 +139,10 @@ class ClusterBroadcast extends PersistentActor with ActorLogging {
   }
 
   /**
-   * 
-   * @param event
-   * @param eventSender
-   */
+    *
+    * @param event
+    * @param eventSender
+    */
   private[this] def sendEventToSites(event: Any, eventSender: ActorRef): Unit = {
     clock = clock.next
     val uid = UUID.randomUUID().toString
@@ -156,7 +153,7 @@ class ClusterBroadcast extends PersistentActor with ActorLogging {
             case Sent =>
           }
         })))
-      case _ => 
+      case _ =>
         EventConfirmations(sites, eventSender)
     }
     confirmations = confirmations.updated(uid, eventConfirmations)
@@ -180,7 +177,7 @@ class ClusterBroadcast extends PersistentActor with ActorLogging {
     } else {
       log.debug(s"Clock is $clock")
     }
-    
+
   }
 
   override def receive = {
@@ -190,11 +187,11 @@ class ClusterBroadcast extends PersistentActor with ActorLogging {
       sender() ! ConfirmStampedEvent(uid, site, clock.counter)
       event match {
         case Tick =>
-          //Tick is only for synchronization
-        case event => 
+        //Tick is only for synchronization
+        case event =>
           sendToSubscribers(event)
       }
-    
+
     //Confirmation from other node's ClusterBroadcast actor for an event
     case ConfirmStampedEvent(uid, siteUid, receivedTime) =>
       synchronizeClock(receivedTime)
@@ -219,12 +216,12 @@ class ClusterBroadcast extends PersistentActor with ActorLogging {
     case UnreachableMember(member) if member.address != cluster.selfAddress =>
       log.debug("Member detected as unreachable: {}", member)
       sites = sites.collect {
-        case e@Site(m, _, _) if member != m => e
+        case e@Site(m, _, _, _, _) if member != m => e
       }
     case MemberRemoved(member, previousStatus) if member.address != cluster.selfAddress =>
       log.debug("Member is Removed: {} after {}", member.address, previousStatus)
       sites = sites.collect {
-        case e@Site(m, _, _) if member != m => e
+        case e@Site(m, _, _,_ ,_) if member != m => e
       }
     case MemberUp(member) if member.address == cluster.selfAddress =>
       tickTask = context.system.scheduler.schedule(5.seconds, 5.seconds, self, Tick)
@@ -241,10 +238,10 @@ class ClusterBroadcast extends PersistentActor with ActorLogging {
   }
 
   override def receiveCommand: Receive = {
-    case e => 
+    case e =>
       println(s"receiveCommand: $e")
   }
 
   override def persistenceId: String = "clusterBroadcast"
-  
+
 }
