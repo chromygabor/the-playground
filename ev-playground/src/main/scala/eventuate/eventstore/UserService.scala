@@ -3,19 +3,17 @@ package eventuate.eventstore
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.marshalling._
-import akka.stream.ActorMaterializer
-import akka.http.scaladsl.server.{StandardRoute, Route}
-import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.model.{HttpResponse, StatusCode, StatusCodes}
-import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
-import spray.json.DefaultJsonProtocol._
-import spray.json.JsonFormat
+import akka.http.scaladsl.server.Directives._
+import akka.http.scaladsl.server.{Directives, Route}
+import akka.stream.{ActorMaterializer, Materializer}
+import de.heikoseeberger.akkahttpjson4s.Json4sSupport
+import org.json4s.DefaultFormats
+import org.json4s.{DefaultFormats, jackson}
 
+import scala.concurrent.{ExecutionContext, Future}
 import scala.io.StdIn
-
-import scala.concurrent.Future
-import scala.reflect.macros.whitebox
-import scala.util.{Success, Failure}
+import scala.util.Success
 
 /**
   * Created by chrogab on 2016.09.06..
@@ -24,7 +22,7 @@ import scala.util.{Success, Failure}
 case class User(userId: Long, name: String)
 
 trait RestServiceApp {
-  def route: Route
+  def route(implicit ec: ExecutionContext, mat: Materializer): Route
 
   // needed to run the route
   implicit val system = ActorSystem()
@@ -43,6 +41,33 @@ trait RestServiceApp {
 
 object UserService extends RestServiceApp {
 
+  implicit val serialization = jackson.Serialization // or native.Serialization
+  implicit val formats = DefaultFormats
+
+  def route(implicit ec: ExecutionContext, mat: Materializer) = {
+    import Directives._
+    import Json4sSupport._
+
+    implicit val serialization = jackson.Serialization // or native.Serialization
+    implicit val formats = DefaultFormats
+
+    pathSingleSlash {
+      get {
+        pathPrefix("user" / LongNumber) { id =>
+          // there might be no item for a given id
+          completeRequest(fetchUser(id))
+        }
+      } ~
+      post {
+        entity(as[User]) { foo =>
+          complete {
+            ???
+          }
+        }
+      }
+    }
+  }
+
   sealed trait DomainResult[+T]
 
   trait FailureResultStatus extends DomainResult[Nothing] {
@@ -59,7 +84,6 @@ object UserService extends RestServiceApp {
   case class Created[T](value: T) extends SuccessResultStatus[T]
   case class Found[T](value: T) extends SuccessResultStatus[T]
 
-  implicit val userFormat = jsonFormat2(User)
 
   private[this] def fetchUser(id: Long): Future[DomainResult[User]] = Future {
     Found(User(1, ""))
@@ -81,19 +105,13 @@ object UserService extends RestServiceApp {
   case class HttpErrorResult(failure: FailureResultStatus)
 
   def completeRequest[T](maybeItem: Future[DomainResult[T]])(implicit _marshaller: ToResponseMarshaller[T]) = {
-    import spray.json._
-    import DefaultJsonProtocol._
-
-    implicit val userFormat = jsonFormat2(User)
-
     onComplete(maybeItem) {
       case Success(failure: FailureResultStatus) =>
-        val s = failure.toJson
 
-//        complete(HttpResponse(
-//          status = mapFailureToStatusCode(failure),
-//          entity = HttpErrorResult(failure)
-//        ))
+        complete(HttpResponse(
+          status = mapFailureToStatusCode(failure),
+          entity = HttpErrorResult(failure)
+        ))
         ???
 //      case Success(Right(user)) =>
 //        complete(ToResponseMarshallable.apply(user))
@@ -103,25 +121,25 @@ object UserService extends RestServiceApp {
 
   }
 
-  override def route: Route =
-    get {
-      pathPrefix("user" / LongNumber) { id =>
-        // there might be no item for a given id
-        completeRequest(fetchUser(id))
-      }
-    }
-
-  //  ~ post {
-  //    path("create-user") {
-  //      entity(as[User]) { order =>
-  //        val saved: Future[Done] = saveUser(order)
-  //        onComplete(saved) { done =>
-  //          complete("order created")
-  //        }
-  //      }
-  //    }
-  //  }
-
+//  override def route: Route =
+//    get {
+//      pathPrefix("user" / LongNumber) { id =>
+//        // there might be no item for a given id
+//        completeRequest(fetchUser(id))
+//      }
+//    }
+//
+//  //  ~ post {
+//  //    path("create-user") {
+//  //      entity(as[User]) { order =>
+//  //        val saved: Future[Done] = saveUser(order)
+//  //        onComplete(saved) { done =>
+//  //          complete("order created")
+//  //        }
+//  //      }
+//  //    }
+//  //  }
+//
 }
 
 //class UserServiceActor extends PersistentActor with ActorLogging {
