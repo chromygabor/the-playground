@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import java.lang.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox spacing="5" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.chromy.reactiveui.myjavafx.CounterNavigatorDialogController" alignment="CENTER">
+    <children>
+        <Button fx:id="_bNext" text=" Up "/>
+        <Label fx:id="_lLabel"></Label>
+        <TextField fx:id="_lValue" alignment="CENTER" prefWidth="100"/>
+        <Button fx:id="_bPrev" text="  Down  "/>
+    </children>
+</VBox>

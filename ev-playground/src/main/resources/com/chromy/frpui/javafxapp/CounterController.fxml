@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import java.lang.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<FlowPane hgap="10.0" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.chromy.frpui.javafxapp.CounterController">
+    <children>
+        <Button fx:id="_btnDecrement" mnemonicParsing="false" text="Decrement" />
+        <Label fx:id="_lblCounter" text="" />
+        <Button fx:id="_btnIncrement" mnemonicParsing="false" text="Increment" />
+        <Button fx:id="_btnClose" mnemonicParsing="false" text="X" />
+    </children>
+</FlowPane>
