@@ -244,3 +244,5 @@ class ClusterEventStoreActor(cluster: Cluster) extends PersistentActor with Stas
 
   override def receiveCommand: Receive = mainReceive()
 }
+
+case object Sent

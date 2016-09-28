@@ -108,10 +108,6 @@ object UserService extends RestServiceApp {
     onComplete(maybeItem) {
       case Success(failure: FailureResultStatus) =>
 
-        complete(HttpResponse(
-          status = mapFailureToStatusCode(failure),
-          entity = HttpErrorResult(failure)
-        ))
         ???
 //      case Success(Right(user)) =>
 //        complete(ToResponseMarshallable.apply(user))
