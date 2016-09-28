@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import java.lang.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<HBox xmlns="http://javafx.com/javafx/8.0.40" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="ui.SimpleUIView">
+    <children>
+        <VBox prefHeight="200.0" prefWidth="400.0">
+            <children>
+                <HBox prefHeight="100.0" prefWidth="200.0">
+                    <children>
+                        <Button fx:id="_incButton" mnemonicParsing="false" text="Inc"/>
+                        <Button fx:id="_decButton" mnemonicParsing="false" text="Dec"/>
+                    </children>
+                </HBox>
+                <Label fx:id="_counter" text="0" />
+            </children>
+        </VBox>
+    </children>
+</HBox>
