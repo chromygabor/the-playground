@@ -1,8 +1,6 @@
 package ui
 
-import java.util.concurrent.Executor
 import javafx.application.Platform
-import javafx.embed.swing.JFXPanel
 import javafx.event.{ActionEvent, EventHandler}
 import javafx.fxml.FXML
 import javafx.scene.Scene
@@ -23,66 +21,64 @@ case object Initialized extends Event
 
 case object DummyEvent extends Event
 
-case class ProgressBar(on: Boolean) extends Event
-
-case class CounterChanged(counter: Int) extends Event
+case object Empty extends Command
 
 /**
   * SimpleUI Behavior
   */
 
-case class State(counter: Int, progressCounter: Int)
+case class State(counter: Int, progressBar: Boolean)
+case class CounterChanged(counter: Int) extends Event
+case class ProgressBar(on: Boolean) extends Event
 
 class SimpleUIBehavior extends Behavior[State] {
 
-  case object ProgressOn extends Command
-  case object ProgressOff extends Command
+  implicit def commandToList(cmd: Command): List[Event] = ???
 
-  override def onCommand: PartialFunction[Command, List[Event]] = {
+  case object ProgressBarOn extends Command
+  case object ProgressBarOff extends Command
+
+  var progressCounter = 0
+
+  override def onCommand(state: State): PartialFunction[Command, List[Event]] = {
     case Init =>
-      state = State(0, 0)
       List(Initialized)
-    case ProgressOn =>
-      val counter = state.progressCounter
-      if(state.progressCounter == 0) println("StartProgress")
-      state = state.copy(progressCounter = counter + 1)
-      Nil
-    case ProgressOff =>
-      val counter = state.progressCounter
-      state = state.copy(progressCounter = counter - 1)
-      if(state.progressCounter == 0) println("StopProgress")
-      Nil
+    case ProgressBarOn =>
+      progressCounter = progressCounter + 1
+      if(progressCounter == 1) List(ProgressBar(true))
+      else Nil
+    case ProgressBarOff =>
+      progressCounter = progressCounter - 1
+      if(progressCounter == 0) List(ProgressBar(false))
+      else Nil
+
     case IncCounter =>
       onSuccess {
         //This is a service call
         Thread.sleep(1000)
         1
-      } { result =>
-        state = state.copy(counter = state.counter + result)
-        self ! ProgressOff
-        List(CounterChanged(state.counter))
+      } { (state, result) =>
+        CounterChanged(state.counter) :: ProgressBarOff
       }
-      self ! ProgressOn
-      Nil
+      ProgressBarOn
     case DecCounter => //Decrement counter by service
       onSuccess {
         //This is a service call
         Thread.sleep(1000)
         1
-      } { result =>
-        state = state.copy(counter = state.counter - result)
-        self ! ProgressOff
-        List(ProgressBar(false), CounterChanged(state.counter))
+      } { (state, result) =>
+        CounterChanged(state.counter) :: ProgressBarOff
       }
 
-      state = state.copy(progressCounter = state.progressCounter + 1)
-      self ! ProgressOn
-      Nil
+      ProgressBarOn
   }
 
-  //    override def onEvent = {
-  //      case Initialized => Nil
-  //    }
+  def oe(state: State): PartialFunction[Event, State] = {
+    case CounterChanged(counter) => state.copy(counter = counter)
+    case ProgressBar(on) => state.copy(progressBar = on)
+    case e =>
+      state
+  }
 
 }
 
@@ -109,7 +105,7 @@ class SimpleUIView extends View {
 
 class SimpleUIController extends Controller[SimpleUIView] {
 
-  def onEvent: EventReceive = {
+  def onEvent(): EventReceive = {
     case Initialized => init()
     case ProgressBar(on) =>
       ui { view =>
