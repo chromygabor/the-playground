@@ -5,8 +5,8 @@ import java.util.UUID
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorRefFactory, Props, Stash}
 import ui.BehaviorContext.InitBehaviorContext
 
-import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Failure, Success}
+import scala.concurrent.{Promise, ExecutionContext, Future}
+import scala.util.{Try, Failure, Success}
 
 /**
   * Created by Gábor on 2016.09.28..
@@ -14,30 +14,24 @@ import scala.util.{Failure, Success}
 trait Behavior[S] extends Actor with ActorLogging with Stash {
 
   private var _state: S = _
-  private var _stateChangeIsAllowed = false
-
-  def state: S = _state
-
-  def state_=(newState: S): Unit = {
-    if (_stateChangeIsAllowed) {
-      _state = newState
-    } else {
-      sys.error("State change is not allowed now")
-    }
-  }
 
   type EventReceive = BehaviorContext.EventReceive
 
   private[this] var _executionContext: ExecutionContext = _
   implicit lazy val ec: ExecutionContext = _executionContext
 
-  case class OnSuccess[T](f: T => List[Event], result: T)
+  case class OnSuccess[T](f: (S,T) => List[Event], result: T)
 
-  def onSuccess[T](future: => T)(f: T => List[Event])(implicit ec: ExecutionContext): Unit = {
-    Future(future).onComplete {
-      case Success(r) => self ! OnSuccess(f, r)
+  def onSuccess[T](future: Future[T])(onComplete: (S,T) => List[Event])(implicit ec: ExecutionContext): Unit = {
+    future.onComplete {
+      case Success(r) => self ! OnSuccess(onComplete, r)
       case Failure(error) =>
     }
+
+  }
+
+  def onSuccess[T](f: => T)(onComplete: (S,T) => List[Event])(implicit ec: ExecutionContext): Unit = {
+    onSuccess(Future(f))(onComplete)
   }
 
 
@@ -55,21 +49,22 @@ trait Behavior[S] extends Actor with ActorLogging with Stash {
   }
 
   def contextInitialized(behaviorContext: BehaviorContext): Receive = {
-    case OnSuccess(f, result) =>
-      _stateChangeIsAllowed = true
-      val events = f(result).map(EventEnvelope(self, _))
-      _stateChangeIsAllowed = false
-      events.foreach(behaviorContext.eventStream ! _)
-    case c: Command if onCommand.isDefinedAt(c) =>
-      _stateChangeIsAllowed = true
-      val events = onCommand(c).map(EventEnvelope(self, _))
-      _stateChangeIsAllowed = false
-      events.foreach(behaviorContext.eventStream ! _)
-    case EventEnvelope(sender, event) if sender == self && onEvent.isDefinedAt(event) =>
-      onEvent(event)
+//    case OnSuccess(f, result) =>
+//      val events = f(result).map(EventEnvelope(self, _))
+//      events.foreach(behaviorContext.eventStream ! _)
+    case c: Command =>
+      val commandListener = onCommand(_state)
+      if(commandListener.isDefinedAt(c)) {
+        val events = commandListener(c).map(EventEnvelope(self, _))
+        events.foreach(behaviorContext.eventStream ! _)
+      }
+    case EventEnvelope(sender, event) if sender == self =>
+      val eventListener = onEvent(_state)
+      if(eventListener.isDefinedAt(event)) _state = eventListener(event)
 
-    case e: EventEnvelope if onEvent.isDefinedAt(e) =>
-      onEvent(e)
+    case event: EventEnvelope =>
+      val eventListener = onEvent(_state)
+      if(eventListener.isDefinedAt(event)) _state = eventListener(event)
 
     case c: Command =>
     case e: EventEnvelope =>
@@ -77,16 +72,16 @@ trait Behavior[S] extends Actor with ActorLogging with Stash {
     case m => log.warning(s"Behavior can only accept command or event. Message received is: $m")
   }
 
-  def onCommand: PartialFunction[Command, List[Event]] = new PartialFunction[Command, List[Event]] {
+  def onCommand(state: S): PartialFunction[Command, List[Event]] = new PartialFunction[Command, List[Event]] {
     override def isDefinedAt(x: Command): Boolean = false
 
     override def apply(v1: Command): List[Event] = throw new IllegalAccessError("Not defined")
   }
 
-  def onEvent = new PartialFunction[Event, Command] {
+  def onEvent(state: S) = new PartialFunction[Event, S] {
     override def isDefinedAt(x: Event): Boolean = false
 
-    override def apply(v1: Event): Command = throw new IllegalAccessError("Not defined")
+    override def apply(v1: Event): S = throw new IllegalAccessError("Not defined")
   }
 }
 
