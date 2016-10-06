@@ -8,6 +8,8 @@ import javafx.scene.control.{Button, Label}
 import javafx.stage.Stage
 
 import akka.actor._
+import akka.util.Timeout
+import scala.concurrent.duration._
 
 import scala.concurrent.ExecutionContext
 
@@ -17,9 +19,7 @@ import scala.concurrent.ExecutionContext
 
 case object Init extends Command
 
-case object Initialized extends Event
-
-case object DummyEvent extends Event
+case object Initialized extends PersistentEvent
 
 case object Empty extends Command
 
@@ -27,29 +27,33 @@ case object Empty extends Command
   * SimpleUI Behavior
   */
 
-case class State(counter: Int, progressBar: Boolean)
-case class CounterChanged(counter: Int) extends Event
-case class ProgressBar(on: Boolean) extends Event
+case class CounterChanged(counter: Int) extends PersistentEvent
+case class ProgressBar(on: Boolean) extends SimpleEvent
 
-class SimpleUIBehavior extends Behavior[State] {
+case object IncCounter extends Command
+case object DecCounter extends Command
 
-  implicit def commandToList(cmd: Command): List[Event] = ???
+case class State(counter: Int)
+class SimpleUIBehavior(val id: String) extends Behavior[State] {
 
-  case object ProgressBarOn extends Command
-  case object ProgressBarOff extends Command
+  case object IncProgressCounter extends Command
+  case object DecProgressCounter extends Command
 
   var progressCounter = 0
 
+  val initialState = State(0)
+
   override def onCommand(state: State): PartialFunction[Command, List[Event]] = {
     case Init =>
+      println("Init command received in behavior")
       List(Initialized)
-    case ProgressBarOn =>
+    case IncProgressCounter =>
       progressCounter = progressCounter + 1
-      if(progressCounter == 1) List(ProgressBar(true))
+      if(progressCounter == 1) ProgressBar(true)
       else Nil
-    case ProgressBarOff =>
+    case DecProgressCounter =>
       progressCounter = progressCounter - 1
-      if(progressCounter == 0) List(ProgressBar(false))
+      if(progressCounter == 0) ProgressBar(false)
       else Nil
 
     case IncCounter =>
@@ -58,37 +62,32 @@ class SimpleUIBehavior extends Behavior[State] {
         Thread.sleep(1000)
         1
       } { (state, result) =>
-        CounterChanged(state.counter) :: ProgressBarOff
+        CounterChanged(state.counter + result) :: DecProgressCounter
       }
-      ProgressBarOn
+      IncProgressCounter
     case DecCounter => //Decrement counter by service
       onSuccess {
         //This is a service call
         Thread.sleep(1000)
         1
       } { (state, result) =>
-        CounterChanged(state.counter) :: ProgressBarOff
+        CounterChanged(state.counter - result) :: DecProgressCounter
       }
 
-      ProgressBarOn
+      IncProgressCounter
   }
 
-  def oe(state: State): PartialFunction[Event, State] = {
+  override def onEvent(state: State): PartialFunction[Event, State] = {
     case CounterChanged(counter) => state.copy(counter = counter)
-    case ProgressBar(on) => state.copy(progressBar = on)
-    case e =>
+    case Initialized =>
+      println("Initialized event received in behavior")
       state
   }
 
 }
 
 
-case object IncCounter extends Command
-
-case object DecCounter extends Command
-
-
-class SimpleUIView extends View {
+class SimpleUIController extends Controller {
   @FXML private var _incButton: Button = _
 
   def incButton = _incButton
@@ -101,34 +100,26 @@ class SimpleUIView extends View {
 
   def counter = _counter
 
-}
-
-class SimpleUIController extends Controller[SimpleUIView] {
-
-  def onEvent(): EventReceive = {
+  def onEvent: EventReceive = {
     case Initialized => init()
-    case ProgressBar(on) =>
-      ui { view =>
+    case ProgressBar(on) => ui {
         println(s"ProgressBar: $on")
-      }
-    case CounterChanged(counter) => ui { view =>
-      view.counter.setText(s"$counter")
+    }
+    case CounterChanged(newCounter) => ui {
+      counter.setText(s"$newCounter")
     }
   }
 
-
-  def init(): Ui = ui { view =>
+  def init(): Ui = ui {
     //this runs on ui thread
-    view.incButton.setOnAction(new EventHandler[ActionEvent] {
+    incButton.setOnAction(new EventHandler[ActionEvent] {
       override def handle(event: ActionEvent): Unit = {
-        println("Sending Inc")
         behavior ! IncCounter
       }
     })
 
-    view.decButton.setOnAction(new EventHandler[ActionEvent] {
+    decButton.setOnAction(new EventHandler[ActionEvent] {
       override def handle(event: ActionEvent): Unit = {
-        println("Sending Dec")
         behavior ! DecCounter
       }
     })
@@ -136,11 +127,47 @@ class SimpleUIController extends Controller[SimpleUIView] {
 
 }
 
+class AppBehavior extends Behavior[Int] {
+  val backgroundExecutor = scala.concurrent.ExecutionContext.global
 
+  val eventStream = context.actorOf(Props(new EventStreamActor), s"EventStreamActor")
+
+  val behaviorContext = new BehaviorContext(context, self, eventStream, backgroundExecutor, Timeout(5.seconds))
+
+  override def initialState: Int = 0
+
+  override def id: String = "AppBehavior"
+
+  override def onCommand(state: Int): PartialFunction[Command, List[Event]] = {
+    case Init =>
+      println("Init command in behavior")
+      Nil
+    case Subscribed =>
+      List(Initialized)
+  }
+
+}
+
+class AppController extends Controller {
+
+//  val controllerContext = new ControllerContext(system, self, eventStream, backgroundExecutor, behaviorContext)
+
+
+  override def onEvent: EventReceive = {
+    case Initialized => ui{
+      println(s"App Controller initialized")
+    }
+    case e => ui {
+      println(s"App Controller event: $e")
+    }
+  }
+}
 
 object SimpleUI extends App {
 
   val system = ActorSystem("UI-system")
+
+  //val controllerActor = system.actorOf(Props(new ))
 
   val eventStream = system.actorOf(Props(new EventStreamActor), s"EventStreamActor")
 
@@ -148,11 +175,13 @@ object SimpleUI extends App {
   val sideEffectExecutor = ExecutionContext.fromExecutor(JavaFXExecutor)
 
   system.actorOf(Props(new Actor {
-    val behaviorContext = new BehaviorContext(context, self, eventStream, backgroundExecutor)
-
+    val behaviorContext = new BehaviorContext(context, self, eventStream, backgroundExecutor, Timeout(5.seconds))
     val controllerContext = new ControllerContext(system, self, eventStream, backgroundExecutor, behaviorContext)
-    val parent = controllerContext.load[SimpleUIController]
 
+//    val (ctrl, behavior) = controllerContext.controllerOf[AppController]
+
+    val behavior = behaviorContext.behaviorOf(Props(new SimpleUIBehavior("SimpleUIBehavior")))
+    val parent = controllerContext.load[SimpleUIController](behavior)
     Platform.runLater(new Runnable {
       override def run(): Unit = {
         val stage = new Stage
