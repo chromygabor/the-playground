@@ -1,14 +1,16 @@
 package ui
 
 import java.net.URL
-import java.util.{ResourceBundle, UUID}
+import java.util.ResourceBundle
 import javafx.fxml.{FXMLLoader, Initializable}
 import javafx.scene.Parent
 import javafx.util.Callback
 
-import akka.actor.{Actor, ActorRef, ActorRefFactory, Props, Stash}
+import akka.actor.{Actor, ActorRef, ActorRefFactory, Props}
+import rx.lang.scala.Observer
 
 import scala.concurrent.ExecutionContext
+import scala.util.{Failure, Success}
 
 /**
   * Created by Gábor on 2016.09.28..
@@ -38,22 +40,38 @@ object ControllerContext {
 
 }
 
-trait View extends Initializable {
-  private var _afterInit: () => Unit = () => ()
+class ControllerContext(actorRefFactory: ActorRefFactory, owner: ActorRef, val eventStream: ActorRef, implicit val backgroundExecutor: ExecutionContext, behaviorContext: BehaviorContext) {
 
-  def setAfterInit(f: () => Unit): Unit = _afterInit = f
 
-  override def initialize(location: URL, resources: ResourceBundle): Unit = _afterInit()
+  def controllerOf[A <: Controller : Manifest]: (A, ActorRef) = {
+    val clazz = manifest[A].runtimeClass
+    val (behaviorActor, fPersistenceId) = {
+      val behaviorName = s"${componentNameOf(clazz)}Behavior"
 
-}
+      println("Trying to create behavior for: " + behaviorName)
 
-case class ViewInitialized(view: AnyRef, behavior: ActorRef, eventStream: ActorRef, backgroundExecutor: ExecutionContext, sideEffectExecutor: ExecutionContext)
+      val props = Props(Class.forName(behaviorName))
+      val actorRef = behaviorContext.behaviorOf(props)
+      actorRef -> behaviorContext.persistenceIdOf(actorRef)
+    }
 
-class ControllerContext(actorRefFactory: ActorRefFactory, owner: ActorRef, val eventStream: ActorRef, val backgroundExecutionContext: ExecutionContext, behaviorContext: BehaviorContext) {
+    val dependencies = Map(
+      "behavior" -> behaviorActor
+    )
 
-  def controllerOf(creator: Props, behavior: ActorRef): ActorRef = {
-    val controller = actorRefFactory.actorOf(creator, s"Controller-${UUID.randomUUID().toString}")
-    controller
+    val controller = ControllerContext.getBean(clazz, dependencies).asInstanceOf[A]
+
+    def afterInit[T](observer: Observer[(T, Event)]): Unit = {
+      //controllerRef ! ViewInitialized(viewInstance, behaviorActor, eventStream, backgroundExecutionContext, sideEffectExecutor = ExecutionContext.fromExecutor(JavaFXExecutor))
+    }
+
+    fPersistenceId.onComplete {
+      case Success(persistenceId) =>
+        controller.setup(actorRefFactory, behaviorActor, eventStream, backgroundExecutor, ExecutionContext.fromExecutor(JavaFXExecutor), persistenceId)
+      case Failure(error) => throw error
+    }
+
+    controller -> behaviorActor
   }
 
   private def componentNameOf(clazz: Class[_]): String = {
@@ -77,42 +95,46 @@ class ControllerContext(actorRefFactory: ActorRefFactory, owner: ActorRef, val e
     def controllerFactory(loader: FXMLLoader, firstLevel: Boolean): Callback[Class[_], AnyRef] = new Callback[Class[_], AnyRef] {
       override def call(clazz: Class[_]): AnyRef = {
 
-        val behaviorActor = behavior.filter(_ => firstLevel).getOrElse {
-          val behaviorName = s"${componentNameOf(clazz)}Behavior"
+        val (behaviorActor, fPersistenceId) = behavior
+          .filter(_ => firstLevel)
+          .map(behavior => behavior -> behaviorContext.persistenceIdOf(behavior))
+          .getOrElse {
+            val behaviorName = s"${componentNameOf(clazz)}Behavior"
 
-          println("Trying to create behavior for: " + behaviorName)
+            println("Trying to create behavior for: " + behaviorName)
 
-          val props = Props(Class.forName(behaviorName))
-          val actorRef = behaviorContext.behaviorOf(props)
-          actorRef
-        }
-
-
+            val props = Props(Class.forName(behaviorName))
+            val actorRef = behaviorContext.behaviorOf(props)
+            actorRef -> behaviorContext.persistenceIdOf(actorRef)
+          }
 
         val dependencies = Map(
           "behavior" -> behaviorActor
         )
 
-        val controllerName = s"${componentNameOf(clazz)}Controller"
-        val props = Props(Class.forName(controllerName))
-        val controllerRef = actorRefFactory.actorOf(props)
+        //        val controllerName = clazz
+        //        val props = Props(Class.forName(controllerName))
+        val controller = ControllerContext.getBean(clazz, dependencies)
 
-        println("Trying to create view: " + clazz)
-        val viewInstance = ControllerContext.getBean(clazz)
-
-        def afterInit(): Unit = {
-          controllerRef ! ViewInitialized(viewInstance, behaviorActor, eventStream, backgroundExecutionContext, sideEffectExecutor = ExecutionContext.fromExecutor(JavaFXExecutor))
+        def afterInit[T](observer: Observer[(T, Event)]): Unit = {
+          //controllerRef ! ViewInitialized(viewInstance, behaviorActor, eventStream, backgroundExecutionContext, sideEffectExecutor = ExecutionContext.fromExecutor(JavaFXExecutor))
         }
 
-        viewInstance match {
-          case v: View => v.setAfterInit(afterInit)
+        controller match {
+          case ctrl: Controller =>
+            fPersistenceId.onComplete {
+              case Success(persistenceId) =>
+                ctrl.setup(actorRefFactory, behaviorActor, eventStream, backgroundExecutor, ExecutionContext.fromExecutor(JavaFXExecutor), persistenceId)
+              case Failure(error) => throw error
+            }
+
           case _ =>
         }
 
         loader.setControllerFactory(controllerFactory(loader, false))
 
 
-        viewInstance
+        controller
       }
     }
 
@@ -133,53 +155,53 @@ class ControllerContext(actorRefFactory: ActorRefFactory, owner: ActorRef, val e
 
 }
 
-trait Controller[V <: View] extends Actor with Stash {
+trait Controller extends Initializable {
 
-  trait Ui extends (V => Unit)
+  case class Context(behavior: ActorRef, eventStream: ActorRef, subscriber: ActorRef, backgroundExecutor: ExecutionContext)
+
+  trait Ui extends Runnable
 
   type EventReceive = PartialFunction[Event, Ui]
 
-  private[this] var _backgroundExecutor: ExecutionContext = _
-  implicit lazy val backgroundExecutor: ExecutionContext = _sideffectExecutor
-
-  private[this] var _sideffectExecutor: ExecutionContext = _
-  implicit lazy val sideeffectExecutor: ExecutionContext = _sideffectExecutor
-
-  private[this] var _behavior: ActorRef = _
-  implicit lazy val behavior = _behavior
-
-  def ui(f: V => Unit): Ui = new Ui {
-    override def apply(view: V): Unit = f(view)
+  def ui(f: => Unit): Ui = new Ui {
+    override def run(): Unit = f
   }
 
-  def receive: Receive = {
-    case ViewInitialized(view: AnyRef, behavior: ActorRef, eventStream: ActorRef, backgroundExecutor, uiExecutor) if view.isInstanceOf[V] =>
-      _backgroundExecutor = backgroundExecutor
-      _sideffectExecutor = uiExecutor
-      _behavior = behavior
-      eventStream ! Subscribe(self)
+  implicit def backgroundExecutor: ExecutionContext = context.map(_.backgroundExecutor).getOrElse(sys.error("BackgroundExecutor is not set yet"))
 
-      unstashAll()
-      context.become(initialized(view.asInstanceOf[V], behavior))
-      self ! Initialized
-    case ViewInitialized(_, _, _, _, _) =>
-      throw new IllegalStateException("Wrong type of view")
-    case _ => stash()
+  def behavior: ActorRef = context.map(_.behavior).getOrElse(sys.error("BackgroundExecutor is not set yet"))
+
+  private[this] var context: Option[Context] = None
+
+  override def initialize(location: URL, resources: ResourceBundle): Unit = {
+    context.map(_.subscriber).getOrElse(sys.error("Subscription not set yet")) ! Initialized
   }
 
-  def initialized(view: V, behavior: ActorRef): Receive = {
-    case EventEnvelope(`behavior`, e) if onEvent.isDefinedAt(e) =>
-      val ui = onEvent(e)
-      sideeffectExecutor.execute(new Runnable {
-        override def run(): Unit = ui(view)
-      })
-    case e@Initialized if onEvent.isDefinedAt(e) =>
-      val ui = onEvent(e)
-      sideeffectExecutor.execute(new Runnable {
-        override def run(): Unit = ui(view)
-      })
-    case e =>
-      println(s"$e is not defined")
+  def setup(actorRefFactory: ActorRefFactory, newBehavior: ActorRef, eventStream: ActorRef, backgroundExecutor: ExecutionContext, uiExecutor: ExecutionContext, persistenceId: String): Unit = {
+    //Unsubscribe if there is a previous subscription
+    context.foreach { case Context(behavior, eventStream, subscriber, _) =>
+      eventStream ! Unsubscribe(subscriber)
+    }
+
+    println(s"persistenceId: $persistenceId")
+    //Create a new subscription
+    val newSubscriber = actorRefFactory.actorOf(Props(new Actor {
+      override def receive: Receive = {
+        case EventEnvelope(sender, event) if sender == behavior && onEvent.isDefinedAt(event) =>
+          //println("Envelope in controller")
+          val ui = onEvent(event)
+          uiExecutor.execute(ui)
+        case Initialized =>
+          //println("Initialized in controller")
+          val ui = onEvent(Initialized)
+          uiExecutor.execute(ui)
+        case e =>
+          //println(s"Controller: $e")
+      }
+    }))
+    eventStream ! Subscribe(newSubscriber)
+    context = Some(Context(newBehavior, eventStream, newSubscriber, backgroundExecutor))
+    behavior ! Subscribed
   }
 
   def onEvent: EventReceive
