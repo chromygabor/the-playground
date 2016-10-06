@@ -8,5 +8,6 @@ dependencies {
         compile 'org.json4s:json4s-jackson_2.11:3.4.0'
         compile 'org.iq80.leveldb:leveldb:0.7'
         compile 'org.fusesource.leveldbjni:leveldbjni-all:1.8'
+        compile 'io.reactivex:rxscala_2.11:0.24.0'
 }
 
