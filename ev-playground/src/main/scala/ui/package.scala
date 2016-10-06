@@ -4,5 +4,8 @@
 package object ui {
   trait Command
 
-  trait Event
+  sealed trait Event
+
+  trait PersistentEvent extends Event
+  trait SimpleEvent extends Event
 }
