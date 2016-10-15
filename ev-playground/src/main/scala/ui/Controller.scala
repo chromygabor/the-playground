@@ -7,9 +7,10 @@ import javafx.scene.Parent
 import javafx.util.Callback
 
 import akka.actor.{Actor, ActorRef, ActorRefFactory, Props}
-import rx.lang.scala.Observer
+import akka.util.Timeout
+import com.typesafe.scalalogging.LazyLogging
 
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
 
 /**
@@ -40,39 +41,11 @@ object ControllerContext {
 
 }
 
-class ControllerContext(actorRefFactory: ActorRefFactory, owner: ActorRef, val eventStream: ActorRef, implicit val backgroundExecutor: ExecutionContext, behaviorContext: BehaviorContext) {
+class ControllerContext(val actorRefFactory: ActorRefFactory, val eventStream: ActorRef, implicit val backgroundExecutor: ExecutionContext, implicit val behaviorContext: Context) extends LazyLogging {
 
+  private[this] val controllerContext = this
 
-  def controllerOf[A <: Controller : Manifest]: (A, ActorRef) = {
-    val clazz = manifest[A].runtimeClass
-    val (behaviorActor, fPersistenceId) = {
-      val behaviorName = s"${componentNameOf(clazz)}Behavior"
-
-      println("Trying to create behavior for: " + behaviorName)
-
-      val props = Props(Class.forName(behaviorName))
-      val actorRef = behaviorContext.behaviorOf(props)
-      actorRef -> behaviorContext.persistenceIdOf(actorRef)
-    }
-
-    val dependencies = Map(
-      "behavior" -> behaviorActor
-    )
-
-    val controller = ControllerContext.getBean(clazz, dependencies).asInstanceOf[A]
-
-    def afterInit[T](observer: Observer[(T, Event)]): Unit = {
-      //controllerRef ! ViewInitialized(viewInstance, behaviorActor, eventStream, backgroundExecutionContext, sideEffectExecutor = ExecutionContext.fromExecutor(JavaFXExecutor))
-    }
-
-    fPersistenceId.onComplete {
-      case Success(persistenceId) =>
-        controller.setup(actorRefFactory, behaviorActor, eventStream, backgroundExecutor, ExecutionContext.fromExecutor(JavaFXExecutor), persistenceId)
-      case Failure(error) => throw error
-    }
-
-    controller -> behaviorActor
-  }
+  val uiExecutor = ExecutionContext.fromExecutor(JavaFXExecutor)
 
   private def componentNameOf(clazz: Class[_]): String = {
     val clazzName = clazz.getCanonicalName
@@ -82,49 +55,38 @@ class ControllerContext(actorRefFactory: ActorRefFactory, owner: ActorRef, val e
     else clazzName
   }
 
-  private[this] def loadImpl[T: Manifest](behavior: Option[ActorRef] = None): Parent = {
+  private[this] def loadImpl[T: Manifest](behavior: Option[BehaviorId] = None): Parent = {
     val controllerResource = {
       val name = {
         val clazz = manifest[T].runtimeClass
         componentNameOf(clazz).replace(".", "/") + ".fxml"
       }
-      println("-------" + name)
       getClass.getClassLoader.getResource(name)
     }
 
     def controllerFactory(loader: FXMLLoader, firstLevel: Boolean): Callback[Class[_], AnyRef] = new Callback[Class[_], AnyRef] {
       override def call(clazz: Class[_]): AnyRef = {
 
-        val (behaviorActor, fPersistenceId) = behavior
+        val fBehaviorId = behavior
           .filter(_ => firstLevel)
-          .map(behavior => behavior -> behaviorContext.persistenceIdOf(behavior))
+          .map(Future.successful _)
           .getOrElse {
             val behaviorName = s"${componentNameOf(clazz)}Behavior"
 
-            println("Trying to create behavior for: " + behaviorName)
+            logger.debug("Trying to create behavior for: " + behaviorName)
 
-            val props = Props(Class.forName(behaviorName))
-            val actorRef = behaviorContext.behaviorOf(props)
-            actorRef -> behaviorContext.persistenceIdOf(actorRef)
+            val behaviorId = BehaviorId()
+            behaviorContext.create(behaviorId, Props(Class.forName(behaviorName)))
+              .map(_ => behaviorId)
           }
 
-        val dependencies = Map(
-          "behavior" -> behaviorActor
-        )
-
-        //        val controllerName = clazz
-        //        val props = Props(Class.forName(controllerName))
-        val controller = ControllerContext.getBean(clazz, dependencies)
-
-        def afterInit[T](observer: Observer[(T, Event)]): Unit = {
-          //controllerRef ! ViewInitialized(viewInstance, behaviorActor, eventStream, backgroundExecutionContext, sideEffectExecutor = ExecutionContext.fromExecutor(JavaFXExecutor))
-        }
+        val controller = ControllerContext.getBean(clazz)
 
         controller match {
           case ctrl: Controller =>
-            fPersistenceId.onComplete {
-              case Success(persistenceId) =>
-                ctrl.setup(actorRefFactory, behaviorActor, eventStream, backgroundExecutor, ExecutionContext.fromExecutor(JavaFXExecutor), persistenceId)
+            fBehaviorId.onComplete {
+              case Success(behaviorId) =>
+                ctrl.setup(controllerContext, behaviorId)
               case Failure(error) => throw error
             }
 
@@ -132,13 +94,11 @@ class ControllerContext(actorRefFactory: ActorRefFactory, owner: ActorRef, val e
         }
 
         loader.setControllerFactory(controllerFactory(loader, false))
-
-
         controller
       }
     }
 
-    println("resource: " + controllerResource)
+    logger.debug("resource: " + controllerResource)
     val loader = new FXMLLoader(controllerResource)
     loader.setControllerFactory(controllerFactory(loader, true))
     val parent: Parent = loader.load()
@@ -149,17 +109,17 @@ class ControllerContext(actorRefFactory: ActorRefFactory, owner: ActorRef, val e
     loadImpl[T](None)
   }
 
-  def load[T: Manifest](behavior: ActorRef): Parent = {
-    loadImpl[T](Some(behavior))
+  def load[T: Manifest](behaviorId: BehaviorId): Parent = {
+    loadImpl[T](Some(behaviorId))
   }
 
 }
 
-trait Controller extends Initializable {
-
-  case class Context(behavior: ActorRef, eventStream: ActorRef, subscriber: ActorRef, backgroundExecutor: ExecutionContext)
+trait Controller extends Initializable with LazyLogging {
 
   trait Ui extends Runnable
+
+  lazy val log = logger
 
   type EventReceive = PartialFunction[Event, Ui]
 
@@ -167,40 +127,50 @@ trait Controller extends Initializable {
     override def run(): Unit = f
   }
 
-  implicit def backgroundExecutor: ExecutionContext = context.map(_.backgroundExecutor).getOrElse(sys.error("BackgroundExecutor is not set yet"))
+  implicit def backgroundExecutor: ExecutionContext = context.map { case (controllerContext, _, _) => controllerContext.backgroundExecutor }.getOrElse(sys.error("BackgroundExecutor is not set yet"))
+  implicit def timeout: Timeout = context.map { case (controllerContext, _, _) => controllerContext.behaviorContext.timeout }.getOrElse(sys.error("Timeout is not set yet"))
+  implicit def behaviorContext: Context = context.map { case (controllerContext, _, _) => controllerContext.behaviorContext }.getOrElse(sys.error("BehaviorContext is not set yet"))
+  private def controllerContext: ControllerContext = context.map { case (controllerContext, _, _) => controllerContext }.getOrElse(sys.error("BehaviorContext is not set yet"))
+  private[this] def behaviorId: BehaviorId = context.map { case (_, _, behaviorId) => behaviorId }.getOrElse(sys.error("BehaviorId is not set yet"))
 
-  def behavior: ActorRef = context.map(_.behavior).getOrElse(sys.error("BackgroundExecutor is not set yet"))
-
-  private[this] var context: Option[Context] = None
-
-  override def initialize(location: URL, resources: ResourceBundle): Unit = {
-    context.map(_.subscriber).getOrElse(sys.error("Subscription not set yet")) ! Initialized
-  }
-
-  def setup(actorRefFactory: ActorRefFactory, newBehavior: ActorRef, eventStream: ActorRef, backgroundExecutor: ExecutionContext, uiExecutor: ExecutionContext, persistenceId: String): Unit = {
-    //Unsubscribe if there is a previous subscription
-    context.foreach { case Context(behavior, eventStream, subscriber, _) =>
-      eventStream ! Unsubscribe(subscriber)
+  val behavior: BehaviorRef = new BehaviorRef {
+    def !(event: Any): Unit = {
+      behaviorContext.sendBehavior(behaviorId, event)
     }
 
-    println(s"persistenceId: $persistenceId")
+    def ?(event: Any): Future[Any] = {
+      behaviorContext.askBehavior(behaviorId, event)
+    }
+  }
+
+  private[this] var context: Option[(ControllerContext, ActorRef, BehaviorId)] = None
+
+  def load[T: Manifest](behaviorId: BehaviorId): Parent = controllerContext.load[T](behaviorId)
+
+
+  override def initialize(location: URL, resources: ResourceBundle): Unit = {
+    context.map { case (_, subscriber, _ ) => subscriber}.getOrElse(sys.error("Subscription not set yet")) ! Initialized
+  }
+
+  def setup(newControllerContext: ControllerContext, behaviorId: BehaviorId): Unit = {
+    //Unsubscribe if there is a previous subscription
+    context.foreach { case (oldControllerContext, oldSubscriber, _) =>
+      oldControllerContext.eventStream ! Unsubscribe(oldSubscriber)
+    }
+
     //Create a new subscription
-    val newSubscriber = actorRefFactory.actorOf(Props(new Actor {
+    val newSubscriber = newControllerContext.actorRefFactory.actorOf(Props(new Actor {
       override def receive: Receive = {
-        case EventEnvelope(sender, event) if sender == behavior && onEvent.isDefinedAt(event) =>
-          //println("Envelope in controller")
-          val ui = onEvent(event)
-          uiExecutor.execute(ui)
+        case Envelope(envelopeBehaviorId, event, _) if envelopeBehaviorId == behaviorId && onEvent.isDefinedAt(event) =>
+          logger.debug(s"Envelope received by controller: $event")
+          Future ( onEvent(event)).foreach(newControllerContext.uiExecutor.execute(_))
         case Initialized =>
-          //println("Initialized in controller")
-          val ui = onEvent(Initialized)
-          uiExecutor.execute(ui)
+          Future ( onEvent(Initialized)).foreach(newControllerContext.uiExecutor.execute(_))
         case e =>
-          //println(s"Controller: $e")
       }
-    }))
-    eventStream ! Subscribe(newSubscriber)
-    context = Some(Context(newBehavior, eventStream, newSubscriber, backgroundExecutor))
+    }), s"Controller_${behaviorId}")
+    newControllerContext.eventStream ! Subscribe(newSubscriber)
+    context = Some((newControllerContext, newSubscriber, behaviorId))
     behavior ! Subscribed
   }
 
