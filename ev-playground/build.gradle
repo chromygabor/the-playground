@@ -1,13 +1,16 @@
 dependencies {
-        compile 'com.typesafe.akka:akka-actor_2.11:2.4.7'
-        compile 'com.typesafe.akka:akka-distributed-data-experimental_2.11:2.4.7'
-        compile 'com.typesafe.akka:akka-persistence_2.11:2.4.7'
-        compile 'com.typesafe.akka:akka-http-experimental_2.11:2.4.7'
-        compile 'com.typesafe.akka:akka-persistence-query-experimental_2.11:2.4.7'
+        compile 'com.typesafe.akka:akka-actor_2.11:2.4.11'
+        compile 'com.typesafe.akka:akka-distributed-data-experimental_2.11:2.4.11'
+        compile 'com.typesafe.akka:akka-persistence_2.11:2.4.11'
+        compile 'com.typesafe.akka:akka-http-experimental_2.11:2.4.11'
+        compile 'com.typesafe.akka:akka-persistence-query-experimental_2.11:2.4.11'
+        compile 'com.typesafe.akka:akka-slf4j_2.11:2.4.11'
         compile 'de.heikoseeberger:akka-http-json4s_2.11:1.9.0'
         compile 'org.json4s:json4s-jackson_2.11:3.4.0'
         compile 'org.iq80.leveldb:leveldb:0.7'
         compile 'org.fusesource.leveldbjni:leveldbjni-all:1.8'
         compile 'io.reactivex:rxscala_2.11:0.24.0'
+        compile 'com.typesafe.scala-logging:scala-logging_2.11:3.5.0'
+        compile 'ch.qos.logback:logback-classic:1.1.7'
 }
 
