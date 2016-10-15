@@ -1,14 +1,8 @@
 package ui
 
-import java.net.URL
-import java.util.ResourceBundle
-import javafx.fxml.{FXMLLoader, Initializable}
-import javafx.scene.Parent
-import javafx.util.Callback
-
-import akka.actor.{Actor, ActorRef, ActorRefFactory, Props}
+import akka.actor._
+import akka.pattern._
 import akka.util.Timeout
-import com.typesafe.scalalogging.LazyLogging
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
@@ -16,163 +10,179 @@ import scala.util.{Failure, Success}
 /**
   * Created by Gábor on 2016.09.28..
   */
-object ControllerContext {
 
-  private def getBean(clazz: Class[_], dependencies: Map[String, ActorRef] = Map.empty): AnyRef = {
-    import scala.reflect.runtime.{universe => ru}
+case object Subscribed extends Command
 
-    implicit val mirror = ru.runtimeMirror(this.getClass.getClassLoader)
+case class ReceiveEvent(senderId: SenderId, event: Event) extends Command
 
-    def getType(clazz: Class[_])(implicit runtimeMirror: ru.Mirror) = runtimeMirror.classSymbol(clazz).toType
-
-
-    val cla = getType(clazz).typeSymbol.asClass
-    val cm = mirror.reflectClass(cla)
-    val constructor = getType(clazz).decl(ru.termNames.CONSTRUCTOR).asMethod
-    val constructorMethod = cm.reflectConstructor(constructor)
-    val args = constructor.asMethod.paramLists.head map { p => (p.name.decodedName.toString, p.typeSignature) }
-    val resolvedArgs = args.map {
-      case (name, tpe) => dependencies.getOrElse(name, null)
-    }
-
-    val ins = constructorMethod.apply(resolvedArgs: _*).asInstanceOf[AnyRef]
-    ins
+object BehaviorId {
+  def apply[T: Manifest](): BehaviorId = {
+    val m = manifest[T]
+    BehaviorId(s"${m.runtimeClass.getSimpleName}_${SenderId.uid}")
   }
-
 }
 
-class ControllerContext(val actorRefFactory: ActorRefFactory, val eventStream: ActorRef, implicit val backgroundExecutor: ExecutionContext, implicit val behaviorContext: Context) extends LazyLogging {
+case class BehaviorId(uid: String = SenderId.uid) extends SenderId
 
-  private[this] val controllerContext = this
+trait BehaviorRef {
+  def !(event: Any): Unit
+  def ?(event: Any): Future[Any]
+}
 
-  val uiExecutor = ExecutionContext.fromExecutor(JavaFXExecutor)
+trait Behavior[S] extends Actor with ActorLogging with Stash {
+  private var _state: S = _
+  private var _initialized = false
 
-  private def componentNameOf(clazz: Class[_]): String = {
-    val clazzName = clazz.getCanonicalName
-    if (clazzName.endsWith("Controller")) clazzName.substring(0, clazzName.lastIndexOf("Controller"))
-    else if (clazzName.endsWith("View")) clazzName.substring(0, clazzName.lastIndexOf("View"))
-    else if (clazzName.endsWith("Behavior")) clazzName.substring(0, clazzName.lastIndexOf("Behavior"))
-    else clazzName
+  def initialState: S
+
+  private[this] var _executionContext: ExecutionContext = _
+  implicit lazy val ec: ExecutionContext = _executionContext
+
+  implicit def behaviorId2BehaviorRef(behaviorId: BehaviorId): BehaviorRef = new BehaviorRef {
+    override def ?(event: Any): Future[Any] = behaviorContext.askBehavior(behaviorId, event)
+
+    override def !(event: Any): Unit = behaviorContext.sendBehavior(behaviorId, event)
   }
 
-  private[this] def loadImpl[T: Manifest](behavior: Option[BehaviorId] = None): Parent = {
-    val controllerResource = {
-      val name = {
-        val clazz = manifest[T].runtimeClass
-        componentNameOf(clazz).replace(".", "/") + ".fxml"
-      }
-      getClass.getClassLoader.getResource(name)
+  implicit def commandToList(cmd: Command): List[Event] = {
+    val commandHandler = onCommand(_state)
+    if (commandHandler.isDefinedAt(cmd)) commandHandler(cmd)
+    else Nil
+  }
+
+  implicit def eventToListOfEvent(evt: Event): List[Event] = evt :: Nil
+
+  case class OnSuccess[T](f: (S, T) => List[Event], result: T)
+
+  def onSuccess[T](future: Future[T])(onComplete: (S, T) => List[Event])(implicit ec: ExecutionContext): Unit = {
+    future.onComplete {
+      case Success(r) => self ! OnSuccess(onComplete, r)
+      case Failure(error) =>
     }
+  }
 
-    def controllerFactory(loader: FXMLLoader, firstLevel: Boolean): Callback[Class[_], AnyRef] = new Callback[Class[_], AnyRef] {
-      override def call(clazz: Class[_]): AnyRef = {
+  def onSuccess[T](f: => T)(onComplete: (S, T) => List[Event])(implicit ec: ExecutionContext): Unit = {
+    onSuccess(Future(f))(onComplete)
+  }
 
-        val fBehaviorId = behavior
-          .filter(_ => firstLevel)
-          .map(Future.successful _)
-          .getOrElse {
-            val behaviorName = s"${componentNameOf(clazz)}Behavior"
+  def processEvent(event: Event, context: Context): Unit = {
+    if (event == Initialized) {
+      _initialized = true
+    }
+    val eventListener = onEvent(_state, context)
+    if (eventListener.isDefinedAt(event)) {
+      val newState = eventListener(event)
+      if (newState != _state) {
+        _state = newState
+      }
+    }
+  }
 
-            logger.debug("Trying to create behavior for: " + behaviorName)
+  def processCommand(c: Command, behaviorContext: Context, behaviorId: BehaviorId): Unit = {
+    val commandListener = onCommand(_state)
+    if (commandListener.isDefinedAt(c)) {
+      commandListener(c).foreach { event =>
+        log.info(s"Publishing event: $event")
+        behaviorContext.eventStream ! behaviorId -> event
+      }
+    }
+  }
 
-            val behaviorId = BehaviorId()
-            behaviorContext.create(behaviorId, Props(Class.forName(behaviorName)))
-              .map(_ => behaviorId)
-          }
+  private[this] var _behaviorContext: Option[(Context, BehaviorId)] = None
+  def behaviorContext = _behaviorContext.map(_._1).getOrElse(throw new IllegalAccessException("BehaviorContext isn't set yet"))
+  def behaviorId = _behaviorContext.map(_._2).getOrElse(throw new IllegalAccessException("BehaviorContext isn't set yet"))
 
-        val controller = ControllerContext.getBean(clazz)
+  val receive: Receive = {
+    case InitBehavior(behaviorContext, behaviorId) =>
+      behaviorContext.eventStream ! Subscribe(self)
+      _executionContext = behaviorContext.executionContext
 
-        controller match {
-          case ctrl: Controller =>
-            fBehaviorId.onComplete {
-              case Success(behaviorId) =>
-                ctrl.setup(controllerContext, behaviorId)
-              case Failure(error) => throw error
-            }
+      unstashAll()
+      _state = initialState
 
-          case _ =>
+      _behaviorContext = Some((behaviorContext, behaviorId))
+      if (!_initialized) self ! Init
+
+    case e if _behaviorContext.isEmpty =>
+      stash()
+    case OnSuccess(f, result) =>
+      f(_state, result).foreach { event =>
+        behaviorContext.eventStream ! behaviorId -> event
+      }
+
+    case c: Command =>
+      processCommand(c, behaviorContext, behaviorId)
+
+    case Envelope(senderId, event, _) if senderId == behaviorId =>
+      processEvent(event, behaviorContext)
+
+    case Envelope(senderId, event, _) =>
+      processCommand(ReceiveEvent(senderId, event), behaviorContext: Context, behaviorId)
+
+    case m => log.warning(s"Behavior can only accept command or event. Message received is: $m")
+  }
+
+  def onCommand(state: S): PartialFunction[Command, List[Event]]
+
+  def onEvent(state: S, context: Context): PartialFunction[Event, S]
+}
+
+case class InitBehavior(behaviorContext: Context, behaviorId: BehaviorId)
+
+
+class Context(actorRefFactory: ActorRefFactory, owner: ActorRef, val eventStream: ActorRef, implicit val executionContext: ExecutionContext, implicit val timeout: Timeout) {
+  case class PutBehavior(behaviorId: BehaviorId, props: Props)
+
+  case class GetBehavior(behaviorId: BehaviorId)
+
+  val behaviorContext = this
+
+  case class Send(behaviorId: BehaviorId, event: Any)
+  case class Ask(behaviorId: BehaviorId, event: Any)
+
+  private[this] val store = actorRefFactory.actorOf(Props(new Actor with ActorLogging {
+    var behaviors = Map.empty[BehaviorId, ActorRef]
+
+    override def receive: Actor.Receive = {
+      case PutBehavior(behaviorId, props) =>
+        if (behaviors.contains(behaviorId)) {
+          log.debug(s"$behaviorId is existing already")
+          sender() ! akka.actor.Status.Failure(new IllegalArgumentException(s"The behavior with ID #$behaviorId is already existing"))
+        } else {
+          log.debug(s"$behaviorId is not existing yet")
+          val actorRef = actorRefFactory.actorOf(props, s"$behaviorId")
+          actorRef ! InitBehavior(behaviorContext, behaviorId)
+          context.watch(actorRef)
+          behaviors = behaviors.updated(behaviorId, actorRef)
+          sender() ! behaviorId
         }
-
-        loader.setControllerFactory(controllerFactory(loader, false))
-        controller
-      }
+      case Terminated(terminatedActor) =>
+        behaviors = behaviors.filterNot { case (behaviorId, actorRef) => actorRef == terminatedActor }
+      case Send(behaviorId: BehaviorId, event: Any) =>
+        behaviors.get(behaviorId).foreach(_ ! event)
+      case Ask(behaviorId: BehaviorId, event: Any) =>
+        behaviors.get(behaviorId).map (actor => actor.ask(event)) match {
+          case Some(f) => f.pipeTo(sender())
+          case None => sender() ! akka.actor.Status.Failure(new IllegalArgumentException(s"Behavior with ID: #$behaviorId doesn't exist"))
+        }
     }
 
-    logger.debug("resource: " + controllerResource)
-    val loader = new FXMLLoader(controllerResource)
-    loader.setControllerFactory(controllerFactory(loader, true))
-    val parent: Parent = loader.load()
-    parent
-  }
+  }), "BehaviorStore")
 
-  def load[T: Manifest]: Parent = {
-    loadImpl[T](None)
-  }
 
-  def load[T: Manifest](behaviorId: BehaviorId): Parent = {
-    loadImpl[T](Some(behaviorId))
-  }
+  def create(behaviorId: BehaviorId, creator: => Behavior[_]): Future[BehaviorId] = create(behaviorId, Props(creator))
 
-}
-
-trait Controller extends Initializable with LazyLogging {
-
-  trait Ui extends Runnable
-
-  lazy val log = logger
-
-  type EventReceive = PartialFunction[Event, Ui]
-
-  def ui(f: => Unit): Ui = new Ui {
-    override def run(): Unit = f
-  }
-
-  implicit def backgroundExecutor: ExecutionContext = context.map { case (controllerContext, _, _) => controllerContext.backgroundExecutor }.getOrElse(sys.error("BackgroundExecutor is not set yet"))
-  implicit def timeout: Timeout = context.map { case (controllerContext, _, _) => controllerContext.behaviorContext.timeout }.getOrElse(sys.error("Timeout is not set yet"))
-  implicit def behaviorContext: Context = context.map { case (controllerContext, _, _) => controllerContext.behaviorContext }.getOrElse(sys.error("BehaviorContext is not set yet"))
-  private def controllerContext: ControllerContext = context.map { case (controllerContext, _, _) => controllerContext }.getOrElse(sys.error("BehaviorContext is not set yet"))
-  private[this] def behaviorId: BehaviorId = context.map { case (_, _, behaviorId) => behaviorId }.getOrElse(sys.error("BehaviorId is not set yet"))
-
-  val behavior: BehaviorRef = new BehaviorRef {
-    def !(event: Any): Unit = {
-      behaviorContext.sendBehavior(behaviorId, event)
-    }
-
-    def ?(event: Any): Future[Any] = {
-      behaviorContext.askBehavior(behaviorId, event)
+  def create(behaviorId: BehaviorId, props: Props): Future[BehaviorId] = {
+    (store ? PutBehavior(behaviorId, props)).collect {
+      case b: BehaviorId => b
     }
   }
 
-  private[this] var context: Option[(ControllerContext, ActorRef, BehaviorId)] = None
-
-  def load[T: Manifest](behaviorId: BehaviorId): Parent = controllerContext.load[T](behaviorId)
-
-
-  override def initialize(location: URL, resources: ResourceBundle): Unit = {
-    context.map { case (_, subscriber, _ ) => subscriber}.getOrElse(sys.error("Subscription not set yet")) ! Initialized
+  def askBehavior(behaviorId: BehaviorId, event: Any): Future[Any] = {
+    store ? Ask(behaviorId, event)
   }
 
-  def setup(newControllerContext: ControllerContext, behaviorId: BehaviorId): Unit = {
-    //Unsubscribe if there is a previous subscription
-    context.foreach { case (oldControllerContext, oldSubscriber, _) =>
-      oldControllerContext.eventStream ! Unsubscribe(oldSubscriber)
-    }
-
-    //Create a new subscription
-    val newSubscriber = newControllerContext.actorRefFactory.actorOf(Props(new Actor {
-      override def receive: Receive = {
-        case Envelope(envelopeBehaviorId, event, _) if envelopeBehaviorId == behaviorId && onEvent.isDefinedAt(event) =>
-          logger.debug(s"Envelope received by controller: $event")
-          Future ( onEvent(event)).foreach(newControllerContext.uiExecutor.execute(_))
-        case Initialized =>
-          Future ( onEvent(Initialized)).foreach(newControllerContext.uiExecutor.execute(_))
-        case e =>
-      }
-    }), s"Controller_${behaviorId}")
-    newControllerContext.eventStream ! Subscribe(newSubscriber)
-    context = Some((newControllerContext, newSubscriber, behaviorId))
-    behavior ! Subscribed
+  def sendBehavior(behaviorId: BehaviorId, event: Any): Unit = {
+    store ! Send(behaviorId, event)
   }
-
-  def onEvent: EventReceive
 }
