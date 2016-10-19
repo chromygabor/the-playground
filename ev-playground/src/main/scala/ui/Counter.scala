@@ -28,7 +28,7 @@ class CounterBehavior extends Behavior[CounterState] {
       Nil
   }
 
-  override def onEvent(state: CounterState, context: Context): PartialFunction[Event, CounterState] = {
+  override def onEvent(state: CounterState, context: AppContext): PartialFunction[Event, CounterState] = {
     case e => state
   }
 }

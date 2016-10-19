@@ -3,6 +3,7 @@ package ui
 import akka.actor._
 import akka.pattern._
 import akka.util.Timeout
+import ui.Context.{Ask, PutBehavior, Send}
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
@@ -13,16 +14,16 @@ import scala.util.{Failure, Success}
 
 case object Subscribed extends Command
 
-case class ReceiveEvent(senderId: SenderId, event: Event) extends Command
+case class ReceiveEvent(senderId: ActorId, event: Event) extends Command
 
 object BehaviorId {
   def apply[T: Manifest](): BehaviorId = {
     val m = manifest[T]
-    BehaviorId(s"${m.runtimeClass.getSimpleName}_${SenderId.uid}")
+    BehaviorId(s"${m.runtimeClass.getSimpleName}_${ActorId.uid}")
   }
 }
 
-case class BehaviorId(uid: String = SenderId.uid) extends SenderId
+case class BehaviorId(uid: String = ActorId.uid) extends ActorId
 
 trait BehaviorRef {
   def !(event: Any): Unit
@@ -65,7 +66,7 @@ trait Behavior[S] extends Actor with ActorLogging with Stash {
     onSuccess(Future(f))(onComplete)
   }
 
-  def processEvent(event: Event, context: Context): Unit = {
+  def processEvent(event: Event, context: AppContext): Unit = {
     if (event == Initialized) {
       _initialized = true
     }
@@ -78,7 +79,7 @@ trait Behavior[S] extends Actor with ActorLogging with Stash {
     }
   }
 
-  def processCommand(c: Command, behaviorContext: Context, behaviorId: BehaviorId): Unit = {
+  def processCommand(c: Command, behaviorContext: AppContext, behaviorId: BehaviorId): Unit = {
     val commandListener = onCommand(_state)
     if (commandListener.isDefinedAt(c)) {
       commandListener(c).foreach { event =>
@@ -88,7 +89,7 @@ trait Behavior[S] extends Actor with ActorLogging with Stash {
     }
   }
 
-  private[this] var _behaviorContext: Option[(Context, BehaviorId)] = None
+  private[this] var _behaviorContext: Option[(AppContext, BehaviorId)] = None
   def behaviorContext = _behaviorContext.map(_._1).getOrElse(throw new IllegalAccessException("BehaviorContext isn't set yet"))
   def behaviorId = _behaviorContext.map(_._2).getOrElse(throw new IllegalAccessException("BehaviorContext isn't set yet"))
 
@@ -117,64 +118,64 @@ trait Behavior[S] extends Actor with ActorLogging with Stash {
       processEvent(event, behaviorContext)
 
     case Envelope(senderId, event, _) =>
-      processCommand(ReceiveEvent(senderId, event), behaviorContext: Context, behaviorId)
+      processCommand(ReceiveEvent(senderId, event), behaviorContext: AppContext, behaviorId)
 
     case m => log.warning(s"Behavior can only accept command or event. Message received is: $m")
   }
 
   def onCommand(state: S): PartialFunction[Command, List[Event]]
 
-  def onEvent(state: S, context: Context): PartialFunction[Event, S]
+  def onEvent(state: S, context: AppContext): PartialFunction[Event, S]
 }
 
-case class InitBehavior(behaviorContext: Context, behaviorId: BehaviorId)
+case class InitBehavior(behaviorContext: AppContext, behaviorId: BehaviorId)
 
 
-class Context(actorRefFactory: ActorRefFactory, owner: ActorRef, val eventStream: ActorRef, implicit val executionContext: ExecutionContext, implicit val timeout: Timeout) {
-  case class PutBehavior(behaviorId: BehaviorId, props: Props)
+case class PutActor(senderId: ActorId, props: Props)
+case class GetBehavior(senderId: ActorId)
+case class Send(senderId: ActorId, event: Any)
+case class Ask(senderId: ActorId, event: Any)
 
-  case class GetBehavior(behaviorId: BehaviorId)
+class ActorStore  extends Actor with ActorLogging {
+  var actors = Map.empty[ActorId, ActorRef]
+
+  override def receive: Actor.Receive = {
+    case PutActor(senderId, props) =>
+      if (actors.contains(senderId)) {
+        log.debug(s"$senderId is existing already")
+        sender() ! akka.actor.Status.Failure(new IllegalArgumentException(s"The behavior with ID #$senderId is already existing"))
+      } else {
+        log.debug(s"$senderId is not existing yet")
+        val actorRef = context.actorOf(props, s"$senderId")
+        //actorRef ! InitBehavior(behaviorContext, senderId)
+        context.watch(actorRef)
+        actors = actors.updated(senderId, actorRef)
+        sender() ! senderId
+      }
+    case Terminated(terminatedActor) =>
+      actors = actors.filterNot { case (senderId, actorRef) => actorRef == terminatedActor }
+    case Send(senderId: ActorId, event: Any) =>
+      actors.get(senderId).foreach(_ ! event)
+    case Ask(senderId: ActorId, event: Any) =>
+      actors.get(senderId).map (actor => actor.ask(event)) match {
+        case Some(f) => f.pipeTo(sender())
+        case None => sender() ! akka.actor.Status.Failure(new IllegalArgumentException(s"Behavior with ID: #$senderId doesn't exist"))
+      }
+  }
+
+}
+
+class AppContext(actorRefFactory: ActorRefFactory, owner: ActorRef, val eventStream: ActorRef, implicit val executionContext: ExecutionContext, implicit val timeout: Timeout) {
 
   val behaviorContext = this
 
-  case class Send(behaviorId: BehaviorId, event: Any)
-  case class Ask(behaviorId: BehaviorId, event: Any)
+  private[this] val store = actorRefFactory.actorOf(Props(new ActorStore), "ActorStore")
 
-  private[this] val store = actorRefFactory.actorOf(Props(new Actor with ActorLogging {
-    var behaviors = Map.empty[BehaviorId, ActorRef]
+  def create(senderId: ActorId, creator: => Actor): Future[ActorId] = create(senderId, Props(creator))
 
-    override def receive: Actor.Receive = {
-      case PutBehavior(behaviorId, props) =>
-        if (behaviors.contains(behaviorId)) {
-          log.debug(s"$behaviorId is existing already")
-          sender() ! akka.actor.Status.Failure(new IllegalArgumentException(s"The behavior with ID #$behaviorId is already existing"))
-        } else {
-          log.debug(s"$behaviorId is not existing yet")
-          val actorRef = actorRefFactory.actorOf(props, s"$behaviorId")
-          actorRef ! InitBehavior(behaviorContext, behaviorId)
-          context.watch(actorRef)
-          behaviors = behaviors.updated(behaviorId, actorRef)
-          sender() ! behaviorId
-        }
-      case Terminated(terminatedActor) =>
-        behaviors = behaviors.filterNot { case (behaviorId, actorRef) => actorRef == terminatedActor }
-      case Send(behaviorId: BehaviorId, event: Any) =>
-        behaviors.get(behaviorId).foreach(_ ! event)
-      case Ask(behaviorId: BehaviorId, event: Any) =>
-        behaviors.get(behaviorId).map (actor => actor.ask(event)) match {
-          case Some(f) => f.pipeTo(sender())
-          case None => sender() ! akka.actor.Status.Failure(new IllegalArgumentException(s"Behavior with ID: #$behaviorId doesn't exist"))
-        }
-    }
-
-  }), "BehaviorStore")
-
-
-  def create(behaviorId: BehaviorId, creator: => Behavior[_]): Future[BehaviorId] = create(behaviorId, Props(creator))
-
-  def create(behaviorId: BehaviorId, props: Props): Future[BehaviorId] = {
-    (store ? PutBehavior(behaviorId, props)).collect {
-      case b: BehaviorId => b
+  def create(senderId: ActorId, props: Props): Future[ActorId] = {
+    (store ? PutActor(senderId, props)).collect {
+      case b: ActorId => b
     }
   }
 

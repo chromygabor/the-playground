@@ -77,7 +77,7 @@ class SimpleUIBehavior(val id: BehaviorId) extends Behavior[State] {
       IncProgressCounter
   }
 
-  override def onEvent(state: State, context: Context): PartialFunction[Event, State] = {
+  override def onEvent(state: State, context: AppContext): PartialFunction[Event, State] = {
     case CounterChanged(counter) =>
       log.debug(s"Counter changed to: $counter")
       state.copy(counter = counter)
@@ -150,7 +150,7 @@ object SimpleUI extends App {
   val sideEffectExecutor = ExecutionContext.fromExecutor(JavaFXExecutor)
 
   system.actorOf(Props(new Actor {
-    val behaviorContext = new Context(context, self, eventStream, backgroundExecutor, Timeout(5.seconds))
+    val behaviorContext = new AppContext(context, self, eventStream, backgroundExecutor, Timeout(5.seconds))
     val controllerContext = new ControllerContext(system, eventStream, backgroundExecutor, behaviorContext)
 
     /**

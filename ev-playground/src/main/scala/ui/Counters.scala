@@ -28,7 +28,7 @@ class CountersBehavior extends Behavior[CountersState] {
       Initialized
   }
 
-  override def onEvent(state: CountersState, context: Context): PartialFunction[Event, CountersState] = {
+  override def onEvent(state: CountersState, context: AppContext): PartialFunction[Event, CountersState] = {
     case Initialized =>
       state
 

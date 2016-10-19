@@ -41,7 +41,7 @@ object ControllerContext {
 
 }
 
-class ControllerContext(val actorRefFactory: ActorRefFactory, val eventStream: ActorRef, implicit val backgroundExecutor: ExecutionContext, implicit val behaviorContext: Context) extends LazyLogging {
+class ControllerContext(val actorRefFactory: ActorRefFactory, val eventStream: ActorRef, implicit val backgroundExecutor: ExecutionContext, implicit val behaviorContext: AppContext) extends LazyLogging {
 
   private[this] val controllerContext = this
 
@@ -129,7 +129,7 @@ trait Controller extends Initializable with LazyLogging {
 
   implicit def backgroundExecutor: ExecutionContext = context.map { case (controllerContext, _, _) => controllerContext.backgroundExecutor }.getOrElse(sys.error("BackgroundExecutor is not set yet"))
   implicit def timeout: Timeout = context.map { case (controllerContext, _, _) => controllerContext.behaviorContext.timeout }.getOrElse(sys.error("Timeout is not set yet"))
-  implicit def behaviorContext: Context = context.map { case (controllerContext, _, _) => controllerContext.behaviorContext }.getOrElse(sys.error("BehaviorContext is not set yet"))
+  implicit def behaviorContext: AppContext = context.map { case (controllerContext, _, _) => controllerContext.behaviorContext }.getOrElse(sys.error("BehaviorContext is not set yet"))
   private def controllerContext: ControllerContext = context.map { case (controllerContext, _, _) => controllerContext }.getOrElse(sys.error("BehaviorContext is not set yet"))
   private[this] def behaviorId: BehaviorId = context.map { case (_, _, behaviorId) => behaviorId }.getOrElse(sys.error("BehaviorId is not set yet"))
 

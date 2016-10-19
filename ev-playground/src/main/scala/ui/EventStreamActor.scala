@@ -25,7 +25,7 @@ class EventStreamActor extends PersistentActor with ActorLogging {
     case Unsubscribe(subscriber) =>
       log.debug(s"Unsubscribe from: $subscriber")
       context.become(loop(subscribers.filterNot(_ == subscriber)))
-    case (sender: SenderId, e: Event) =>
+    case (sender: ActorId, e: Event) =>
       val event = Envelope(sender, e, lastSentId + 1)
       event.event match {
         case e: PersistentEvent =>
@@ -56,17 +56,16 @@ case class Subscribe(actor: ActorRef)
 
 case class Unsubscribe(actor: ActorRef)
 
-object SenderId {
+object ActorId {
   def uid = UUID.randomUUID().toString.take(10)
 }
 
-trait SenderId {
+trait ActorId {
   def uid: String
-
   override def toString: String = uid
 }
 
-case class Envelope (sender: SenderId, event: Event, id: Long) {
+case class Envelope (sender: ActorId, event: Event, id: Long) {
   override def toString: String = {
     s"EventEnvelope[${id}](sender=$sender, event=$event)"
   }
