@@ -14,7 +14,7 @@ The project should give answer to these questions:
 * The concurrency handling should be provided by the framework, and the real UI tasks should be explicit
 * The application should be event driven
 
-** Event flow
+## Event flow
 The diagram shows the event flow:
 
 ![alt text](https://github.com/chromygabor/the-playground/blob/master/akka-ui/doc/AkkaUI.png "Event flow")
