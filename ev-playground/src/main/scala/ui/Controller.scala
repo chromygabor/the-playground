@@ -6,11 +6,14 @@ import javafx.fxml.{FXMLLoader, Initializable}
 import javafx.scene.Parent
 import javafx.util.Callback
 
+import akka.actor.Actor.Receive
 import akka.actor.{Actor, ActorRef, ActorRefFactory, Props}
 import akka.util.Timeout
 import com.typesafe.scalalogging.LazyLogging
+import ui.ControllerContext.Subscribed
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Promise, Await, ExecutionContext, Future}
 import scala.util.{Failure, Success}
 
 /**
@@ -18,7 +21,9 @@ import scala.util.{Failure, Success}
   */
 object ControllerContext {
 
-  private def getBean(clazz: Class[_], dependencies: Map[String, ActorRef] = Map.empty): AnyRef = {
+  case object Subscribed extends Command
+
+  private def createController(clazz: Class[_], dependencies: Map[String, ActorRef] = Map.empty): AnyRef = {
     import scala.reflect.runtime.{universe => ru}
 
     implicit val mirror = ru.runtimeMirror(this.getClass.getClassLoader)
@@ -41,7 +46,20 @@ object ControllerContext {
 
 }
 
-class ControllerContext(val actorRefFactory: ActorRefFactory, val eventStream: ActorRef, implicit val backgroundExecutor: ExecutionContext, implicit val behaviorContext: AppContext) extends LazyLogging {
+class ControllerContext(val behaviorContext: BehaviorContext) extends LazyLogging {
+
+
+  implicit def backgroundExecutor = behaviorContext.backgroundExecutor
+
+  def subscribeTo(behaviorId: BehaviorId)(f: PartialFunction[Any, Unit]): ActorRef = {
+    val subscriber = behaviorContext.actorRefFactory.actorOf(Props(new Actor {
+      override def receive: Receive = f
+    }))
+    behaviorContext.subscribe(subscriber)
+    subscriber
+  }
+
+  def unsubscribe(oldSubscriber: ActorRef): Unit = ???
 
   private[this] val controllerContext = this
 
@@ -80,7 +98,7 @@ class ControllerContext(val actorRefFactory: ActorRefFactory, val eventStream: A
               .map(_ => behaviorId)
           }
 
-        val controller = ControllerContext.getBean(clazz)
+        val controller = ControllerContext.createController(clazz)
 
         controller match {
           case ctrl: Controller =>
@@ -102,6 +120,7 @@ class ControllerContext(val actorRefFactory: ActorRefFactory, val eventStream: A
     val loader = new FXMLLoader(controllerResource)
     loader.setControllerFactory(controllerFactory(loader, true))
     val parent: Parent = loader.load()
+    parent.setUserData(behaviorContext)
     parent
   }
 
@@ -123,55 +142,67 @@ trait Controller extends Initializable with LazyLogging {
 
   type EventReceive = PartialFunction[Event, Ui]
 
+  def ui(): Ui = new Ui {
+    override def run(): Unit = ()
+  }
+
   def ui(f: => Unit): Ui = new Ui {
     override def run(): Unit = f
   }
 
-  implicit def backgroundExecutor: ExecutionContext = context.map { case (controllerContext, _, _) => controllerContext.backgroundExecutor }.getOrElse(sys.error("BackgroundExecutor is not set yet"))
-  implicit def timeout: Timeout = context.map { case (controllerContext, _, _) => controllerContext.behaviorContext.timeout }.getOrElse(sys.error("Timeout is not set yet"))
-  implicit def behaviorContext: AppContext = context.map { case (controllerContext, _, _) => controllerContext.behaviorContext }.getOrElse(sys.error("BehaviorContext is not set yet"))
-  private def controllerContext: ControllerContext = context.map { case (controllerContext, _, _) => controllerContext }.getOrElse(sys.error("BehaviorContext is not set yet"))
-  private[this] def behaviorId: BehaviorId = context.map { case (_, _, behaviorId) => behaviorId }.getOrElse(sys.error("BehaviorId is not set yet"))
+  implicit def backgroundExecutor: ExecutionContext = context.map { case (controllerContext, _, _, _) => controllerContext.behaviorContext.backgroundExecutor }.getOrElse(sys.error("BackgroundExecutor is not set yet"))
 
-  val behavior: BehaviorRef = new BehaviorRef {
-    def !(event: Any): Unit = {
-      behaviorContext.sendBehavior(behaviorId, event)
-    }
+  implicit def timeout: Timeout = context.map { case (controllerContext, _, _, _) => controllerContext.behaviorContext.timeout }.getOrElse(sys.error("Timeout is not set yet"))
 
-    def ?(event: Any): Future[Any] = {
-      behaviorContext.askBehavior(behaviorId, event)
-    }
-  }
+  implicit def behaviorContext: BehaviorContext = context.map { case (controllerContext, _, _, _) => controllerContext.behaviorContext }.getOrElse(sys.error("BehaviorContext is not set yet"))
 
-  private[this] var context: Option[(ControllerContext, ActorRef, BehaviorId)] = None
+  private def controllerContext: ControllerContext = context.map { case (controllerContext, _, _, _) => controllerContext }.getOrElse(sys.error("BehaviorContext is not set yet"))
+
+  private[this] def behaviorId: BehaviorId = context.map { case (_, _, behaviorId, _) => behaviorId }.getOrElse(sys.error("BehaviorId is not set yet"))
+
+  protected def behavior: BehaviorRef = context.map { case (_, _, _, behaviorRef) => behaviorRef }.getOrElse(sys.error("BehaviorRef is not set yet"))
+
+  private[this] var context: Option[(ControllerContext, ActorRef, BehaviorId, BehaviorRef)] = None
 
   def load[T: Manifest](behaviorId: BehaviorId): Parent = controllerContext.load[T](behaviorId)
 
+  private[this] val initialized = Promise[Unit]()
 
   override def initialize(location: URL, resources: ResourceBundle): Unit = {
-    context.map { case (_, subscriber, _ ) => subscriber}.getOrElse(sys.error("Subscription not set yet")) ! Initialized
+    initialized.success(())
+    //context.map { case (_, subscriber, _, _) => subscriber }.getOrElse(sys.error("Subscription not set yet")) ! Initialized
   }
 
   def setup(newControllerContext: ControllerContext, behaviorId: BehaviorId): Unit = {
-    //Unsubscribe if there is a previous subscription
-    context.foreach { case (oldControllerContext, oldSubscriber, _) =>
-      oldControllerContext.eventStream ! Unsubscribe(oldSubscriber)
-    }
 
     //Create a new subscription
-    val newSubscriber = newControllerContext.actorRefFactory.actorOf(Props(new Actor {
-      override def receive: Receive = {
-        case Envelope(envelopeBehaviorId, event, _) if envelopeBehaviorId == behaviorId && onEvent.isDefinedAt(event) =>
-          logger.debug(s"Envelope received by controller: $event")
-          Future ( onEvent(event)).foreach(newControllerContext.uiExecutor.execute(_))
-        case Initialized =>
-          Future ( onEvent(Initialized)).foreach(newControllerContext.uiExecutor.execute(_))
-        case e =>
-      }
-    }), s"Controller_${behaviorId}")
-    newControllerContext.eventStream ! Subscribe(newSubscriber)
-    context = Some((newControllerContext, newSubscriber, behaviorId))
-    behavior ! Subscribed
+    val newSubscriber = newControllerContext.subscribeTo(behaviorId) {
+      case Envelope(envelopeBehaviorId, event, _) if envelopeBehaviorId == behaviorId && onEvent.isDefinedAt(event) =>
+        //logger.debug(s"Envelope received by controller: $event")
+        Future(onEvent(event)).foreach(newControllerContext.uiExecutor.execute(_))
+      case Initialized =>
+        Future(onEvent(Initialized)).foreach(newControllerContext.uiExecutor.execute(_))
+      case e =>
+        //logger.debug(s"$e is not defined in this controller")
+    }
+
+    newControllerContext.behaviorContext.behaviorOf(behaviorId).onComplete {
+      case Success(behaviorRef) =>
+        //Unsubscribe if there is a previous subscription
+        context.foreach { case (oldControllerContext, oldSubscriber, _, _) =>
+          oldControllerContext.unsubscribe(oldSubscriber)
+        }
+        context = Some((newControllerContext, newSubscriber, behaviorId, behaviorRef))
+        initialized.future.foreach { _ =>
+          log.debug(s"Start replaying for $behaviorId")
+          newControllerContext.behaviorContext.replay({ envelope =>
+            val p = envelope.sender == behaviorId
+            log.debug(s"$envelope, $p")
+            p
+          }, newSubscriber)
+        }
+      case Failure(error) => throw error
+    }(newControllerContext.backgroundExecutor)
   }
 
   def onEvent: EventReceive
