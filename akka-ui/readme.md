@@ -17,4 +17,5 @@ The project should give answer to these questions:
 ** Event flow
 The diagram shows the event flow:
 
-[Event flow]: https://github.com/chromygabor/the-playground/blob/master/akka-ui/doc/AkkaUI.png "Event flow"
+![alt text](https://github.com/chromygabor/the-playground/blob/master/akka-ui/doc/AkkaUI.png "Event flow")
+
