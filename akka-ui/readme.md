@@ -1,11 +1,10 @@
 # JavaFX UI with Akka
 
 ## Purpose
-The purpose of this project to prove that Akka can help us to build JavaFX ui in a proper way. So this will be a POC.
+The purpose of this project is, to prove that Akka can help us to build JavaFX ui in a proper way. So this will be a POC.
 
 
 ## Overview
-
 The project should give answer to these questions:
 * There should be behaviors which are responsible for the business tasks of the components (service calls, validation, etc)
 * There should be controllers which are responsible for the visible parts of the application (show a label, dialog, handle clicks, etc)
