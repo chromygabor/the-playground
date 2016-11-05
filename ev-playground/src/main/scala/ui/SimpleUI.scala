@@ -9,9 +9,11 @@ import javafx.stage.{Stage, WindowEvent}
 
 import akka.actor._
 import akka.util.Timeout
+import ui.CounterService.{DecrementCounter, IncrementCounter}
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
+import scala.util.{Failure, Success}
 
 /**
   * Created by chrogab on 2016.09.13..
@@ -21,124 +23,40 @@ case object Init extends Command
 
 case object Initialized extends PersistentEvent
 
-case object Empty extends Command
-
 /**
   * SimpleUI Behavior
   */
 
-case class CounterChanged(counter: Int) extends PersistentEvent
-case class ProgressBar(on: Boolean) extends SimpleEvent
-
-case object IncCounter extends Command
-case object DecCounter extends Command
-
-case class State(counter: Int)
-class SimpleUIBehavior(val id: BehaviorId) extends Behavior[State] {
-
-  case object IncProgressCounter extends Command
-  case object DecProgressCounter extends Command
-
-  var progressCounter = 0
-
-  val initialState = State(0)
-
-  override def onCommand(state: State): PartialFunction[Command, List[Event]] = {
-    case Init =>
-      log.debug("Init command received in behavior")
-      List(Initialized)
-    case IncProgressCounter =>
-      progressCounter = progressCounter + 1
-      if(progressCounter == 1) ProgressBar(true)
-      else Nil
-    case DecProgressCounter =>
-      progressCounter = progressCounter - 1
-      if(progressCounter == 0) ProgressBar(false)
-      else Nil
-
-    case IncCounter =>
-      onSuccess {
-        //This is a service call
-        Thread.sleep(1000)
-        1
-      } { (state, result) =>
-        CounterChanged(state.counter + result) :: DecProgressCounter
-      }
-      IncProgressCounter
-    case DecCounter => //Decrement counter by service
-      onSuccess {
-        //This is a service call
-        Thread.sleep(1000)
-        1
-      } { (state, result) =>
-        CounterChanged(state.counter - result) :: DecProgressCounter
-      }
-
-      IncProgressCounter
-  }
-
-  override def onEvent(state: State, context: AppContext): PartialFunction[Event, State] = {
-    case CounterChanged(counter) =>
-      log.debug(s"Counter changed to: $counter")
-      state.copy(counter = counter)
-    case Initialized =>
-      log.debug("Initialized event received in behavior")
-      state
-  }
-
-}
-
-
-class SimpleUIController extends Controller {
-  @FXML private var _incButton: Button = _
-
-  def incButton = _incButton
-
-  @FXML private var _decButton: Button = _
-
-  def decButton = _decButton
-
-  @FXML private var _counter: Label = _
-
-  def counter = _counter
-
-  def onEvent: EventReceive = {
-    case Initialized => init()
-    case ProgressBar(on) => ui {
-        println(s"ProgressBar: $on")
-    }
-    case CounterChanged(newCounter) => ui {
-      counter.setText(s"$newCounter")
-    }
-    case e => ui {
-      println(s"Ez: $e")
-    }
-  }
-
-  def init(): Ui = ui {
-    //this runs on ui thread
-    incButton.setOnAction(new EventHandler[ActionEvent] {
-      override def handle(event: ActionEvent): Unit = {
-        behavior ! IncCounter
-      }
-    })
-
-    decButton.setOnAction(new EventHandler[ActionEvent] {
-      override def handle(event: ActionEvent): Unit = {
-        behavior ! DecCounter
-      }
-    })
-  }
-
-}
 object CounterService {
-  val behaviorId = BehaviorId("CounterService")
   case object AddCounter
+  case class IncrementCounter(behaviorId: BehaviorId)
+  case class DecrementCounter(behaviorId: BehaviorId)
+  case class CloseCounter(behaviorId: BehaviorId)
 }
 
-case class CounterServiceState(counters: Map[Int, Int] = Map.empty)
 class CounterService extends Actor {
-  override def receive: Actor.Receive = ???
+  override def receive = loop(Map())
+
+  def loop(counters: Map[BehaviorId, Int]): Receive = {
+    case AddCounter =>
+      val newBehaviorId = BehaviorId()
+      val initialValue = 0
+      val newCounters = counters.updated(newBehaviorId, initialValue)
+      Thread.sleep(1000)
+      sender() ! newBehaviorId -> initialValue
+      context.become(loop(newCounters))
+    case IncrementCounter(behaviorId) =>
+      val newCounters = counters.updated(behaviorId, counters.getOrElse(behaviorId, 0) + 1)
+      Thread.sleep(1000)
+      sender() ! newCounters(behaviorId)
+      context.become(loop(newCounters))
+    case DecrementCounter(behaviorId) =>
+      val newCounters = counters.updated(behaviorId, counters.getOrElse(behaviorId, 0) -1)
+      Thread.sleep(1000)
+      sender() ! newCounters(behaviorId)
+      context.become(loop(newCounters))
+  }
+
 }
 
 object SimpleUI extends App {
@@ -150,40 +68,45 @@ object SimpleUI extends App {
   val sideEffectExecutor = ExecutionContext.fromExecutor(JavaFXExecutor)
 
   system.actorOf(Props(new Actor {
-    val behaviorContext = new AppContext(context, self, eventStream, backgroundExecutor, Timeout(5.seconds))
-    val controllerContext = new ControllerContext(system, eventStream, backgroundExecutor, behaviorContext)
+    val appContext = new AppContext(context, self, eventStream, backgroundExecutor, Timeout(5.seconds))
+    val behaviorContext = new BehaviorContext(appContext)
+    val controllerContext = new ControllerContext(behaviorContext)
 
     /**
       * Creating services
       */
-    //behaviorContext.create(CounterService.behaviorId, new CounterService)
+    appContext.create(ServiceId("CounterService"), Props(new CounterService))
 
-    behaviorContext.create(BehaviorId("CountersBehavior"), Props(new CountersBehavior)).foreach { behaviorId =>
-      val parent = controllerContext.load[CountersController](behaviorId)
-      Platform.runLater(new Runnable {
-        override def run(): Unit = {
-          val stage = new Stage
-          stage.setScene(new Scene(parent))
-          stage.setTitle("CounterPair App")
-          stage.show()
-          stage.setOnCloseRequest(new EventHandler[WindowEvent] {
-            override def handle(event: WindowEvent): Unit = {
-              context.system.terminate()
+    behaviorContext.create[CountersBehavior]().onComplete {
+      case Success(behaviorId) =>
+        val parent = controllerContext.load[CountersController](behaviorId)
+        Platform.runLater(new Runnable {
+          override def run(): Unit = {
+            val stage = new Stage
+            stage.setScene(new Scene(parent))
+            stage.setTitle("CounterPair App")
+            stage.show()
+            stage.setOnCloseRequest(new EventHandler[WindowEvent] {
+              override def handle(event: WindowEvent): Unit = {
+                context.system.terminate()
+              }
+            })
+
+            context.system.whenTerminated.onComplete {
+              case _ =>
+                Platform.runLater(new Runnable {
+                  override def run(): Unit = {
+                    stage.close()
+                  }
+                })
             }
-          })
 
-          context.system.whenTerminated.onComplete {
-            case _ =>
-              Platform.runLater(new Runnable {
-                override def run(): Unit = {
-                  stage.close()
-                }
-              })
           }
-
-        }
-      })
+        })
+      case Failure(error) =>
+        error.printStackTrace()
     }
+
 
 
     override def receive: Actor.Receive = {
