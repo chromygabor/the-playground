@@ -37,18 +37,18 @@ object ClusterEventStore extends App {
 
   import ExecutionContext.Implicits.global
 
-//    (actors(0) ? TestMessage("22")).onComplete { input =>
-//      println(s"1: *********** $input")
-//    }
-//    (actors(0) ? TestMessage("22")).onComplete { input =>
-//      println(s"2: *********** $input")
-//    }
-//    (actors(1) ? TestMessage("3")).onComplete { input =>
-//      println(s"3: *********** $input")
-//    }
-//    (actors(1) ? TestMessage("4")).onComplete { input =>
-//      println(s"4: *********** $input")
-//    }
+    (actors(0) ? TestMessage("22")).onComplete { input =>
+      println(s"1: *********** $input")
+    }
+    (actors(0) ? TestMessage("22")).onComplete { input =>
+      println(s"2: *********** $input")
+    }
+    (actors(1) ? TestMessage("3")).onComplete { input =>
+      println(s"3: *********** $input")
+    }
+    (actors(1) ? TestMessage("4")).onComplete { input =>
+      println(s"4: *********** $input")
+    }
 }
 
 object ClusterEventStoreActor {
