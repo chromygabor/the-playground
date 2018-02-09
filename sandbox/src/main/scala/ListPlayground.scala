@@ -2,18 +2,17 @@ import scala.annotation.tailrec
 
 object ListPlayground extends App {
 
-  def listToListOfList[A](original: Seq[A], pageSize: Int): Seq[Seq[A]] = {
+  def listToListOfList[A](original: Seq[A], pageSize: Int): Seq[Seq[(A)]] = {
     val indexedSeq = original.zipWithIndex
-    val size = original.size
 
-    def loop(remainder: Seq[(A, Int)], pageNum: Int = 0, accu: Seq[(A, Int)]) = {
+    def loop(remainder: Seq[(A, Int)], pageNum: Int = 1, accu: Seq[Seq[(A)]] = Seq.empty): Seq[Seq[(A)]] = {
       val (ready, rem) =  splitIf(remainder)(in => in._2 / pageSize == pageNum)
-      ready
+      val newAccu = accu :+ ready.map(_._1)
+      if(rem.isEmpty) newAccu
+      else loop(rem, pageNum + 1, newAccu)
     }
 
-    println(splitIf(indexedSeq)(in => in._2 / pageSize == 1))
-
-    ???
+    loop(indexedSeq)
   }
 
   @tailrec
@@ -27,5 +26,5 @@ object ListPlayground extends App {
   val l = (1 to 10).toList
 
   println(l)
-  println(listToListOfList(l, 3))
+  println(listToListOfList(l, 3).mkString("-----------------\n", "\n", ""))
 }
