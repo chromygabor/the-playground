@@ -1,1 +1,1 @@
-include 'metro', 'binarytree', 'sandbox', 'reactiveui', 'frpui', 'ev-playground', 'akka-ui'
+include 'sandbox', 'frpui', 'ev-playground', 'soundcloud'
