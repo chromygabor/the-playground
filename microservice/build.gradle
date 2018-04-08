@@ -1,0 +1,14 @@
+def langLevel = 1.8
+ 
+dependencies {
+    compile 'org.scala-lang:scala-library:2.11.11'
+    compile 'org.scala-lang:scala-reflect:2.11.11'
+    compile 'com.typesafe.akka:akka-actor_2.11:2.5.3'
+    compile 'org.scalamacros:paradise_2.11.11:2.1.0'
+    compile 'com.typesafe.akka:akka-http_2.11:10.0.5'
+    compile 'com.typesafe.scala-logging:scala-logging_2.11:3.5.0'
+    compile 'ch.qos.logback:logback-classic:1.1.7'
+    compile 'net.codingwell:scala-guice_2.10:4.1.0'
+    testCompile group: 'org.scalatest', name: 'scalatest_2.11', version: '3.0.4'
+    testCompile group: 'com.typesafe.akka', name: 'akka-http-testkit_2.11', version: '10.0.9'
+}
