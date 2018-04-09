@@ -56,3 +56,10 @@ object SoundCloud extends App {
   }
 
 }
+
+trait Requester {
+  def doRequest(request: HttpRequest): Future[HttpResponse]
+}
+case class AuthRequest() extends Requester {
+  override def doRequest(request: HttpRequest): Future[HttpResponse] = ???
+}

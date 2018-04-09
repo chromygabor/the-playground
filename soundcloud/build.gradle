@@ -1,7 +1,8 @@
 dependencies {
-        compile 'com.typesafe.akka:akka-actor_2.11:2.5.11'
-        compile 'com.typesafe.akka:akka-http_2.11:10.1.0'
-        compile 'com.typesafe.akka:akka-stream_2.11:2.5.11'
-        compile 'org.scalatest:scalatest_2.11:2.2.4'
+    compile 'com.typesafe.akka:akka-actor_2.11:2.5.11'
+    compile 'com.typesafe.akka:akka-http_2.11:10.1.0'
+    compile 'com.typesafe.akka:akka-stream_2.11:2.5.11'
+    compile 'org.scalatest:scalatest_2.11:2.2.4'
+    compile project(':microservice')
 }
 
