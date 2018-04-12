@@ -49,14 +49,14 @@ trait MyServiceModule extends ScalaModule with LazyLogging  {
   }
 
   def configure(): Unit = {
-    println("Configure")
+    //println("Configure")
     initialize()
   }
 
   def main(args: Array[String]): Unit = {
     val inj = Guice.createInjector(this)
     if(alreadyBound) {
-      println("Starting services")
+      println(s"Starting services: ${services.mkString("",",","")}")
       val myServer = inj.getInstance(classOf[ServiceRoutes])
 
       def route =
@@ -89,7 +89,7 @@ object MyModule extends MyServiceModule with ActorSystemSupport {
   }
 
   override def initialize(): Unit = {
-    println("MyModule configure")
+    //println("MyModule configure")
 
     bind[SoundCloudService]
       .annotatedWith(Names.named("soundcloudService"))

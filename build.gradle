@@ -35,8 +35,17 @@ subprojects {
     }
  
     dependencies {
-        compile 'org.scala-lang:scala-library:2.11.6'
-        compile 'org.scala-lang:scala-reflect:2.11.6'
+        compile 'com.typesafe.akka:akka-actor_2.11:2.5.11'
+        compile 'com.typesafe.akka:akka-http_2.11:10.1.0'
+        compile 'com.typesafe.akka:akka-stream_2.11:2.5.11'
+
+        compile 'com.typesafe.scala-logging:scala-logging_2.11:3.5.0'
+        compile 'ch.qos.logback:logback-classic:1.1.7'
+
+        compile 'org.scalatest:scalatest_2.11:2.2.4'
+
+        compile 'org.scala-lang:scala-library:2.11.11'
+        compile 'org.scala-lang:scala-reflect:2.11.11'
     }
 }
 
